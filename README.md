@@ -32,6 +32,7 @@ When initializing this template:
         * `dbup-sqlite`
         * `dbup-oracle`
         * Or others (my goodness, there are a lot of available DbUp packages)
+    * If you switched DbUp packages, then you will also need to adjust the `MySqlDatabase` call in `SchemaUpgrader.cs`.
     * Consider updating the connection string defined in `Program.cs`.
     * If the intended type of server does not prefer using files with a `.sql` extension, then you should adjust the
       `EmbeddedResource` pattern in `RedShirt.Example.Schema.csproj`
