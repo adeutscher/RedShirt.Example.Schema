@@ -25,3 +25,6 @@ jobs:
 
       - name: Build
         run: dotnet build RedShirt.Example.Schema.slnx --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test RedShirt.Example.Schema.slnx --no-build --configuration Release --verbosity normal
