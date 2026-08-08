@@ -16,7 +16,8 @@ This is a template project, which means are a few special considerations:
 
 When initializing this template:
 
-1. Run `init.sh` to assign a new C# namespace and label (the label is the prefix associated with environment variables,
+1. Run `init-repo.sh` to assign a new C# namespace and label (the label is the prefix associated with environment
+   variables,
    such as `EXAMPLE_SCHEMA_HOST`).
 
     ```bash
@@ -36,6 +37,7 @@ When initializing this template:
     * Consider updating the connection string defined in `Program.cs`.
     * If the intended type of server does not prefer using files with a `.sql` extension, then you should adjust the
       `EmbeddedResource` pattern in `RedShirt.Example.Schema.csproj`
+    * Integration tests will need to be updated/replaced.
 
 3. The `local-update.sh` script was made as a convenience button for local applies to a disposable database running on
    your local machine. If you would rather set up your environment variables in a different way, then you may wish to
@@ -49,8 +51,8 @@ The DbUp library has the following behaviour:
 
 * It shall iterate through the `.sql` files in the `Scripts/` directory of the `RedShirt.Example.Schema` project, which
   represent incremental updates to the schema.
-* It shall consult a journal table (hard-coded as `Patches` in `Program.cs`) to verify `.sql` files that have already
-  been applied.
+* It shall consult a journal table (hard-coded as `Patches` in `SchemaUpgrader.cs`) to verify `.sql` files that have
+  already been applied.
 
 In order to ensure that updates are executed in the intended order and to avoid one large directory, the following
 guidelines are strongly advised:
@@ -66,6 +68,9 @@ might be placed at `Scripts/2026/2026-09/2026-09-01-02-create-records-table.sql`
 To write initial statements for adjusting tables, it is encouraged to use a database tool such as DBeaver to output
 proposed changes and then applying them to `.sql` update files in this project.
 
+Integration tests under `test/RedShirt.Example.Schema.IntegrationTests` use Testcontainers and require a working Docker
+daemon (they spin up a MariaDB container to apply and verify schema scripts).
+
 ## Execution
 
 Instructions on how to apply schema updates.
@@ -77,7 +82,7 @@ Instructions on how to apply schema updates.
 Set the following necessary environment variables in your `~/.bashrc` file:
 
 * `EXAMPLE_SCHEMA_HOST`: Address of your SQL server
-* `EXAMPLE_SCHEMA_NAME`: Name of your realm schema
+* `EXAMPLE_SCHEMA_NAME`: Name of your schema
 * `EXAMPLE_SCHEMA_USER`: Username with which to access the target schema. The user must have access to update the
   schema.
 * `EXAMPLE_SCHEMA_PASSWORD`: User password to access the target schema
@@ -86,7 +91,7 @@ Example:
 
 ```bash
 export EXAMPLE_SCHEMA_HOST="127.0.0.1"
-export EXAMPLE_SCHEMA_NAME="realm"
+export EXAMPLE_SCHEMA_NAME="example"
 export EXAMPLE_SCHEMA_USER="db-user"
 export EXAMPLE_SCHEMA_PASSWORD="redacted"
 ```
