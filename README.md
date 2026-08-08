@@ -33,7 +33,9 @@ might be placed at `Scripts/2026/2026-09/2026-09-01-02-create-records-table.sql`
 
 Instructions on how to apply schema updates.
 
-### Setup
+### Deployed Database
+
+#### Setup
 
 Set the following necessary environment variables in your `~/.bashrc` file:
 
@@ -58,7 +60,7 @@ Reload your `~/.bashrc` file:
 . ~/.bashrc
 ```
 
-### Application
+#### Application
 
 To deploy updates, use the `update.sh` shorthand script:
 
