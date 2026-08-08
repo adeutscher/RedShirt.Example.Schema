@@ -2,5 +2,6 @@ root = true
 
 # Rider code cleanup / reformat mangles SQL dialect files; leave Scripts/ alone.
 [*.sql]
-resharper_substitution_for_cleanup_profile = * => skip
+resharper_substitution_for_cleanup_profile =
+* = > skip
 ij_formatter_enabled = false

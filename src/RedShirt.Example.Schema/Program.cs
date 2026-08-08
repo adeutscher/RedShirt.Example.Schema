@@ -1,6 +1,5 @@
-﻿using DbUp;
+﻿using RedShirt.Example.Schema;
 using RedShirt.Example.Schema.Exceptions;
-using System.Reflection;
 
 const string varHost = "EXAMPLE_SCHEMA_HOST";
 const string varName = "EXAMPLE_SCHEMA_NAME";
@@ -34,24 +33,4 @@ if (string.IsNullOrWhiteSpace(schemaPassword))
 
 var connectionString = $"server={schemaHost};user={schemaUser};password={schemaPassword};database={schemaName};";
 
-var upgrader = DeployChanges.To
-    .MySqlDatabase(connectionString)
-    .JournalToMySqlTable(schemaName, "Patches")
-    .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly())
-    .LogToConsole()
-    .Build();
-
-var result = upgrader.PerformUpgrade();
-
-if (!result.Successful)
-{
-    Console.ForegroundColor = ConsoleColor.Red;
-    Console.WriteLine(result.Error);
-    Console.ResetColor();
-    return -1;
-}
-
-Console.ForegroundColor = ConsoleColor.Green;
-Console.WriteLine("Success!");
-Console.ResetColor();
-return 0;
+return SchemaUpgrader.Upgrade(connectionString, schemaName);
