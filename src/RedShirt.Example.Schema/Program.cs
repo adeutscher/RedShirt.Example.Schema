@@ -2,10 +2,10 @@
 using RedShirt.Example.Schema.Exceptions;
 using System.Reflection;
 
-const string varHost = "REALM_SCHEMA_HOST";
-const string varName = "REALM_SCHEMA_NAME";
-const string varUser = "REALM_SCHEMA_USER";
-const string varPassword = "REALM_SCHEMA_PASSWORD";
+const string varHost = "EXAMPLE_SCHEMA_HOST";
+const string varName = "EXAMPLE_SCHEMA_NAME";
+const string varUser = "EXAMPLE_SCHEMA_USER";
+const string varPassword = "EXAMPLE_SCHEMA_PASSWORD";
 
 var schemaHost = Environment.GetEnvironmentVariable(varHost);
 var schemaName = Environment.GetEnvironmentVariable(varName);

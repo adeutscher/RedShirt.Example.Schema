@@ -4,13 +4,37 @@ Example schema version tracking for a database table using DbUp library.
 
 ## Template
 
-This is a template project, which means are a few special considerations.
+This is a template project, which means are a few special considerations:
 
-An applied application of this template would order its update scripts in accordance with
-the [File Organization and Maintenance](#file-organization-and-maintenance) section of this README. However, rather
-than document the development of the template and apply incremental updates, this template maintains a single file:
-`Scripts/0000/0000-01/0000-00-00-00-example.sql`. The data within the template tables while it is acting as a template
-are assumed to be entirely disposable.
+* An applied application of this template would order its update scripts in accordance with
+  the [File Organization and Maintenance](#file-organization-and-maintenance) section of this README. However, rather
+  than document the development of the template and apply incremental updates as would be intended for an applied
+  project, this template maintains a single file: `Scripts/0000/0000-01/0000-00-00-00-example.sql`. The data within the
+  template tables while it is acting as a template are assumed to be entirely disposable.
+
+### Initialization
+
+When initializing this template:
+
+1. Run `init.sh` to assign a new C# namespace and label (the label is the prefix associated with environment variables,
+   such as `EXAMPLE_SCHEMA_HOST`).
+
+    ```bash
+   ./init-repo.sh "Malamute.Schema" PROJECT_MALAMUTE
+    ```
+    * After this point, `init-repo.sh` can be safely deleted.
+
+2. This template was written with MariaDB/MySQL in mind. If you are not planning to use a MySQL-compatible server when
+   applying this template, then please consider the following:
+    * Consider switching to another DbUp package appropriate to your choice in database technology, such as:
+        * `dbup-sqlserver`
+        * `dbup-postgresql`
+        * `dbup-sqlite`
+        * `dbup-oracle`
+        * Or others (my goodness, there are a lot of available DbUp packages)
+    * Consider updating the connection string defined in `Program.cs`.
+    * If the intended type of server does not prefer using files with a `.sql` extension, then you should adjust the
+      `EmbeddedResource` pattern in `RedShirt.Example.Schema.csproj`
 
 ## File Organization and Maintenance
 
@@ -18,7 +42,8 @@ The DbUp library has the following behaviour:
 
 * It shall iterate through the `.sql` files in the `Scripts/` directory of the `RedShirt.Example.Schema` project, which
   represent incremental updates to the schema.
-* It shall consult a journal table to verify `.sql` files that have already been applied.
+* It shall consult a journal table (hard-coded as `Patches` in `Program.cs`) to verify `.sql` files that have already
+  been applied.
 
 In order to ensure that updates are executed in the intended order and to avoid one large directory, the following
 guidelines are strongly advised:
@@ -28,6 +53,11 @@ guidelines are strongly advised:
 
 For example, a script to create a `Records` table on September 1, 2026 (the second script to be committed that day)
 might be placed at `Scripts/2026/2026-09/2026-09-01-02-create-records-table.sql`
+
+## Development
+
+To write initial statements for adjusting tables, it is encouraged to use a database tool such as DBeaver to output
+proposed changes and then applying them to `.sql` update files in this project.
 
 ## Execution
 
@@ -66,4 +96,36 @@ To deploy updates, use the `update.sh` shorthand script:
 
 ```bash
 ./update.sh
+```
+
+### Local Database
+
+#### Setup
+
+Ensure that the `LOCAL_SQL_PASSWORD` environment variable is set in your environment (for example in `~/.bashrc`).
+This is the password for the local SQL server. The `local-update.sh` script maps it to `EXAMPLE_SCHEMA_PASSWORD` and
+supplies local connection defaults:
+
+* `EXAMPLE_SCHEMA_HOST`: `127.0.0.1`
+* `EXAMPLE_SCHEMA_NAME`: `example`
+* `EXAMPLE_SCHEMA_USER`: `root`
+
+Example:
+
+```bash
+export LOCAL_SQL_PASSWORD="redacted"
+```
+
+Reload your `~/.bashrc` file if you added the variable there:
+
+```bash
+. ~/.bashrc
+```
+
+#### Application
+
+To deploy updates against the local SQL server, use the `local-update.sh` shorthand script:
+
+```bash
+./local-update.sh
 ```

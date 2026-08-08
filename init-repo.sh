@@ -1,7 +1,14 @@
 #!/bin/bash
 
 NAMESPACE_OLD="RedShirt.Example.Schema"
+LABEL_OLD="EXAMPLE"
+
 NAMESPACE_NEW="${1}"
+LABEL_NEW="${2}"
+
+usage() {
+  echo "Usage: $(basename "${0}") <new-namespace> <new-label>" >&2
+}
 
 rename_project() {
   local directory
@@ -20,8 +27,8 @@ rename_project() {
   mv "${1}" "${directory}/${nameNew}"
 }
 
-if [ -z "${NAMESPACE_NEW}" ]; then
-  echo "No new namespace provided."
+if [ -z "${NAMESPACE_NEW}" ] || [ -z "${LABEL_NEW}" ]; then
+  usage
   exit 1
 fi
 
@@ -34,6 +41,7 @@ mv "${NAMESPACE_OLD}.slnx" "${NAMESPACE_NEW}.slnx"
 while read -r f; do
   [ -z "${f}" ] && continue
   sed -i "s/${NAMESPACE_OLD}/${NAMESPACE_NEW}/g" "${f}"
+  sed -i "s/${LABEL_OLD}_/${LABEL_NEW}_/g" "${f}"
 done <<< "$(find . \( \
   -name '*.cs' -o \
   -name '*.csproj' -o \
