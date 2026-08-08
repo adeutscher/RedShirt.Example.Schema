@@ -1,0 +1,12 @@
+<Solution>
+    <Folder Name="/src/">
+        <Project Path="src/RedShirt.Example.Schema/RedShirt.Example.Schema.csproj"/>
+    </Folder>
+    <Folder Name="/Solution Items/">
+        <File Path="README.md"/>
+        <File Path="update.sh"/>
+    </Folder>
+    <Folder Name="/test/">
+        <Project Path="test/RedShirt.Example.Schema.IntegrationTests/RedShirt.Example.Schema.IntegrationTests.csproj"/>
+    </Folder>
+</Solution>
