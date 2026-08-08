@@ -48,8 +48,5 @@ done <<< "$(find . \( \
   -name '*.md' -o \
   -name '*.slnx' -o \
   -name '*.sh' -o \
-  -name 'Dockerfile' -o \
-  -name 'nswag.json' -o \
-  -path './test/local/docker-compose.yaml' -o \
   \( -path './.github/*' -a \( -name '*.yml' -o -name '*.yaml' \) \) \
 \))"
