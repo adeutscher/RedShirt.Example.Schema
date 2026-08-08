@@ -36,6 +36,12 @@ When initializing this template:
     * If the intended type of server does not prefer using files with a `.sql` extension, then you should adjust the
       `EmbeddedResource` pattern in `RedShirt.Example.Schema.csproj`
 
+3. The `local-update.sh` script was made as a convenience button for local applies to a disposable database running on
+   your local machine. If you would rather set up your environment variables in a different way, then you may wish to
+   simply delete `local-update.sh` altogether. If you choose to keep `local-update.sh`, then please note that the
+   username "root" is hard-coded in, which may need changing if your chosen database technology does not use root (e.g.
+   SQL Server prefers "sa").
+
 ## File Organization and Maintenance
 
 The DbUp library has the following behaviour:
