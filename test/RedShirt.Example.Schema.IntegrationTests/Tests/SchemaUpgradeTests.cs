@@ -55,13 +55,13 @@ public class SchemaUpgradeTests
     [Fact]
     public async Task Upgrade_AppliesEmbeddedScripts_AndIsIdempotent()
     {
-        await using var mySql = new MySqlBuilder()
+        await using var mySql = new MySqlBuilder("mariadb:12.3.2")
             .WithDatabase(DatabaseName)
             .WithUsername(Username)
             .WithPassword(Password)
             .Build();
 
-        await mySql.StartAsync();
+        await mySql.StartAsync(TestContext.Current.CancellationToken);
 
         var connectionString = mySql.GetConnectionString();
 

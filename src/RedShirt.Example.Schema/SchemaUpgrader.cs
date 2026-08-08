@@ -2,7 +2,7 @@ using DbUp;
 
 namespace RedShirt.Example.Schema;
 
-public static class SchemaUpgrader
+internal static class SchemaUpgrader
 {
     public const string JournalTableName = "Patches";
 
