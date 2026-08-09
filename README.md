@@ -6,19 +6,20 @@ Example schema version tracking for a database table using DbUp library.
 
 This is a template project, which means are a few special considerations:
 
-* An applied application of this template would order its update scripts in accordance with
+* An applied application of this template would order its update scripts in accordance with the guideline set out in
   the [File Organization and Maintenance](#file-organization-and-maintenance) section of this README. However, rather
   than document the development of the template and apply incremental updates as would be intended for an applied
   project, this template maintains a single file: `Scripts/0000/0000-01/0000-00-00-00-example.sql`. The data within the
   template tables while it is acting as a template are assumed to be entirely disposable.
+* The tables declared in this template are in service of the API template
+  at [RedShirt.Example.Api](https://github.com/adeutscher/RedShirt.Example.Api).
 
 ### Initialization
 
 When initializing this template:
 
 1. Run `init-repo.sh` to assign a new C# namespace and label (the label is the prefix associated with environment
-   variables,
-   such as `EXAMPLE_SCHEMA_HOST`).
+   variables, such as `EXAMPLE_SCHEMA_HOST`).
 
     ```bash
    ./init-repo.sh "Malamute.Schema" PROJECT_MALAMUTE
@@ -45,6 +46,8 @@ When initializing this template:
    username "root" is hard-coded in, which may need changing if your chosen database technology does not use root (e.g.
    SQL Server prefers "sa").
 
+4. Once you have initialized this template, you will want to remove this [Template](#template) section from this README.
+
 ## File Organization and Maintenance
 
 The DbUp library has the following behaviour:
@@ -63,17 +66,28 @@ guidelines are strongly advised:
 For example, a script to create a `Records` table on September 1, 2026 (the second script to be committed that day)
 might be placed at `Scripts/2026/2026-09/2026-09-01-02-create-records-table.sql`
 
+The DbUp library's incremental updates means that applied scripts should never be updated (especially scripts that have
+been established in the default branch). Editing an already-applied file will not re-run on existing DBs and will desync
+environments.
+
 ## Development
 
 To write initial statements for adjusting tables, it is encouraged to use a database tool such as DBeaver to output
 proposed changes and then applying them to `.sql` update files in this project.
 
 Integration tests under `test/RedShirt.Example.Schema.IntegrationTests` use Testcontainers and require a working Docker
-daemon (they spin up a MariaDB container to apply and verify schema scripts).
+daemon (they spin up a MariaDB container to apply and verify schema scripts). Run them with:
+
+```bash
+dotnet test
+```
 
 ## Execution
 
 Instructions on how to apply schema updates.
+
+The target database must already exist before running `update.sh` or `local-update.sh`. These scripts apply schema
+patches to an existing database; they do not create the database itself.
 
 ### Deployed Database
 
@@ -114,9 +128,9 @@ To deploy updates, use the `update.sh` shorthand script:
 
 #### Setup
 
-Ensure that the `LOCAL_SQL_PASSWORD` environment variable is set in your environment (for example in `~/.bashrc`).
-This is the password for the local SQL server. The `local-update.sh` script maps it to `EXAMPLE_SCHEMA_PASSWORD` and
-supplies local connection defaults:
+Ensure that the `LOCAL_SQL_PASSWORD` environment variable is set in your environment (for example in `~/.bashrc`). This
+is the password for the local SQL server. The `local-update.sh` script maps it to `EXAMPLE_SCHEMA_PASSWORD` and supplies
+local connection defaults:
 
 * `EXAMPLE_SCHEMA_HOST`: `127.0.0.1`
 * `EXAMPLE_SCHEMA_NAME`: `example`
