@@ -14,16 +14,18 @@ public class SchemaUpgradeTests
         await using var connection = new MySqlConnection(connectionString);
         await connection.OpenAsync(TestContext.Current.CancellationToken);
 
-        await using (var command = new MySqlCommand(
-                         """
-                         SELECT COUNT(*)
-                         FROM information_schema.tables
-                         WHERE table_schema = @database
-                           AND table_name = 'DapperData'
-                         """,
-                         connection))
+        foreach (var tableName in new[] { "Product", "Order" })
         {
+            await using var command = new MySqlCommand(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.tables
+                WHERE table_schema = @database
+                  AND table_name = @tableName
+                """,
+                connection);
             command.Parameters.AddWithValue("@database", DatabaseName);
+            command.Parameters.AddWithValue("@tableName", tableName);
             var tableCount = Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
             Assert.Equal(1, tableCount);
         }

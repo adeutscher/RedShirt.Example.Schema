@@ -1,10 +1,24 @@
--- tables in service of RedShirt.Example.Api general template
+-- tables in service of RedShirt.Example.Api example implementations (ProductDto, OrderDto)
 
-CREATE TABLE IF NOT EXISTS DapperData
+CREATE TABLE IF NOT EXISTS `Product`
 (
-    id INT AUTO_INCREMENT,
-    username VARCHAR(50) NOT NULL,
-    email VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (id)
+    `Id` CHAR(36) NOT NULL,
+    `CreatedAtUtc` DATETIME(6) NOT NULL,
+    `UpdatedAtUtc` DATETIME(6) NOT NULL,
+    `Sku` VARCHAR(64) NOT NULL,
+    `Name` VARCHAR(255) NOT NULL,
+    `Price` DECIMAL(19, 4) NOT NULL,
+    PRIMARY KEY (`Id`)
+);
+
+CREATE TABLE IF NOT EXISTS `Order`
+(
+    `Id` CHAR(36) NOT NULL,
+    `CreatedAtUtc` DATETIME(6) NOT NULL,
+    `UpdatedAtUtc` DATETIME(6) NOT NULL,
+    `CustomerId` CHAR(36) NOT NULL,
+    `Status` VARCHAR(64) NOT NULL,
+    `TotalAmount` DECIMAL(19, 4) NOT NULL,
+    `TotalPrice` DECIMAL(19, 4) NULL,
+    PRIMARY KEY (`Id`)
 );
