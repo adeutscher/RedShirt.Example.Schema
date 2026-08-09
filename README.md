@@ -66,17 +66,28 @@ guidelines are strongly advised:
 For example, a script to create a `Records` table on September 1, 2026 (the second script to be committed that day)
 might be placed at `Scripts/2026/2026-09/2026-09-01-02-create-records-table.sql`
 
+The DbUp library's incremental updates means that applied scripts should never be updated (especially scripts that have
+been established in the default branch). Editing an already-applied file will not re-run on existing DBs and will desync
+environments.
+
 ## Development
 
 To write initial statements for adjusting tables, it is encouraged to use a database tool such as DBeaver to output
 proposed changes and then applying them to `.sql` update files in this project.
 
 Integration tests under `test/RedShirt.Example.Schema.IntegrationTests` use Testcontainers and require a working Docker
-daemon (they spin up a MariaDB container to apply and verify schema scripts).
+daemon (they spin up a MariaDB container to apply and verify schema scripts). Run them with:
+
+```bash
+dotnet test
+```
 
 ## Execution
 
 Instructions on how to apply schema updates.
+
+The target database must already exist before running `update.sh` or `local-update.sh`. These scripts apply schema
+patches to an existing database; they do not create the database itself.
 
 ### Deployed Database
 
