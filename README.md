@@ -6,19 +6,20 @@ Example schema version tracking for a database table using DbUp library.
 
 This is a template project, which means are a few special considerations:
 
-* An applied application of this template would order its update scripts in accordance with
+* An applied application of this template would order its update scripts in accordance with the guideline set out in
   the [File Organization and Maintenance](#file-organization-and-maintenance) section of this README. However, rather
   than document the development of the template and apply incremental updates as would be intended for an applied
   project, this template maintains a single file: `Scripts/0000/0000-01/0000-00-00-00-example.sql`. The data within the
   template tables while it is acting as a template are assumed to be entirely disposable.
+* The tables declared in this template are in service of the API template
+  at [RedShirt.Example.Api](https://github.com/adeutscher/RedShirt.Example.Api).
 
 ### Initialization
 
 When initializing this template:
 
 1. Run `init-repo.sh` to assign a new C# namespace and label (the label is the prefix associated with environment
-   variables,
-   such as `EXAMPLE_SCHEMA_HOST`).
+   variables, such as `EXAMPLE_SCHEMA_HOST`).
 
     ```bash
    ./init-repo.sh "Malamute.Schema" PROJECT_MALAMUTE
@@ -44,6 +45,8 @@ When initializing this template:
    simply delete `local-update.sh` altogether. If you choose to keep `local-update.sh`, then please note that the
    username "root" is hard-coded in, which may need changing if your chosen database technology does not use root (e.g.
    SQL Server prefers "sa").
+
+4. Once you have initialized this template, you will want to remove this [Template](#template) section from this README.
 
 ## File Organization and Maintenance
 
@@ -114,9 +117,9 @@ To deploy updates, use the `update.sh` shorthand script:
 
 #### Setup
 
-Ensure that the `LOCAL_SQL_PASSWORD` environment variable is set in your environment (for example in `~/.bashrc`).
-This is the password for the local SQL server. The `local-update.sh` script maps it to `EXAMPLE_SCHEMA_PASSWORD` and
-supplies local connection defaults:
+Ensure that the `LOCAL_SQL_PASSWORD` environment variable is set in your environment (for example in `~/.bashrc`). This
+is the password for the local SQL server. The `local-update.sh` script maps it to `EXAMPLE_SCHEMA_PASSWORD` and supplies
+local connection defaults:
 
 * `EXAMPLE_SCHEMA_HOST`: `127.0.0.1`
 * `EXAMPLE_SCHEMA_NAME`: `example`
