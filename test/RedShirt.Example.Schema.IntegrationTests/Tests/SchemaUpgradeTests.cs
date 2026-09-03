@@ -14,7 +14,7 @@ public class SchemaUpgradeTests
         await using var connection = new MySqlConnection(connectionString);
         await connection.OpenAsync(TestContext.Current.CancellationToken);
 
-        foreach (var tableName in new[] {"Product", "Customers", "Order"})
+        foreach (var tableName in new[] {"Product", "Customers", "Order", "UploadAggregate", "UploadEvent"})
         {
             await using var command = new MySqlCommand(
                 """
