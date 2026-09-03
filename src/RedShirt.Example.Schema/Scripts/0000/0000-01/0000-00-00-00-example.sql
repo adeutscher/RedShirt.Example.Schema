@@ -42,8 +42,7 @@ CREATE TABLE IF NOT EXISTS `UploadAggregate`
     `UploadedByUserId` VARCHAR(256) NOT NULL,
     `State` INT NOT NULL,
     `FileName` VARCHAR(512) NOT NULL,
-    `IsValidated` TINYINT(1) NOT NULL DEFAULT 0,
-    `IsRejected` TINYINT(1) NOT NULL DEFAULT 0,
+    `Flags` INT NOT NULL DEFAULT 0,
     `IdempotencyKey` VARCHAR(128) NOT NULL,
     PRIMARY KEY (`Id`),
     UNIQUE KEY `IX_UploadAggregate_IdempotencyKey` (`IdempotencyKey`)
