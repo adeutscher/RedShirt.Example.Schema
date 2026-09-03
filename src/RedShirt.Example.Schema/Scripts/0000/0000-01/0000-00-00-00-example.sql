@@ -42,10 +42,14 @@ CREATE TABLE IF NOT EXISTS `UploadAggregate`
     `UploadedByUserId` VARCHAR(256) NOT NULL,
     `State` INT NOT NULL,
     `FileName` VARCHAR(512) NOT NULL,
+    `FileSizeBytes` BIGINT UNSIGNED NULL,
+    -- ascii_bin: hex checksums require exact, case-sensitive equality for lookups and dedup
+    `Sha256Checksum` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
     `Flags` INT NOT NULL DEFAULT 0,
     `IdempotencyKey` VARCHAR(128) NOT NULL,
     PRIMARY KEY (`Id`),
-    UNIQUE KEY `IX_UploadAggregate_IdempotencyKey` (`IdempotencyKey`)
+    UNIQUE KEY `IX_UploadAggregate_IdempotencyKey` (`IdempotencyKey`),
+    KEY `IX_UploadAggregate_Sha256Checksum` (`Sha256Checksum`)
 );
 
 CREATE TABLE IF NOT EXISTS `UploadEvent`
