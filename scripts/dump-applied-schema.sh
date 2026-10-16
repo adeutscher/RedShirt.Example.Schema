@@ -40,7 +40,7 @@ DOCKER_IMAGE="${DOCKER_IMAGE:-example-schema:local}"
 TESTS_ENABLE="${TESTS_ENABLE:-0}"
 
 # Defaults align with EXAMPLE_SCHEMA_* / local-update.sh. Override when reviewing another target name.
-REVIEW_SCHEMA_NAME="${EXAMPLE_SCHEMA_NAME:-example}"
+REVIEW_SCHEMA_NAME="${EXAMPLE_SCHEMA_NAME:-schema-review}"
 REVIEW_SCHEMA_USER="${EXAMPLE_SCHEMA_USER:-root}"
 REVIEW_SCHEMA_PASSWORD="${REVIEW_SCHEMA_PASSWORD:-schema-review-local}"
 
