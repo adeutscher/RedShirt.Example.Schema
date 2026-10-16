@@ -82,6 +82,32 @@ daemon (they spin up a MariaDB container to apply and verify schema scripts). Ru
 dotnet test
 ```
 
+### Applied schema review dump
+
+`scripts/dump-applied-schema.sh` builds the same schema upgrader image as `docker-update.sh`, starts a **disposable**
+MariaDB container on a private Docker network, applies all embedded update scripts, then writes a **schema-only** SQL
+dump (no row data) suitable for review or diffing.
+
+```bash
+./scripts/dump-applied-schema.sh
+./scripts/dump-applied-schema.sh -o /tmp/example-schema.sql
+```
+
+The script requires a working Docker daemon. It does not use your `.env` or local database. Optional overrides include
+`DOCKER_IMAGE`, `TESTS_ENABLE`, `EXAMPLE_SCHEMA_NAME`, and `MARIADB_IMAGE` (defaults to `mariadb:12.3.2`, matching
+integration tests).
+
+MariaDB-specific logic lives in `scripts/dump-applied-schema.sh` in two marked blocks:
+
+* **Disposable database server**: Docker image (`MARIADB_IMAGE`), MariaDB bootstrap environment variables
+  (`MARIADB_ROOT_PASSWORD`, `MARIADB_DATABASE`), and readiness via a TCP `mariadb` client on the same Docker
+  network (not `mariadb-admin ping` on localhost, which can succeed before remote connections work).
+* **Schema dump**: `mariadb-dump` with `--no-data` (replace with your engine's schema export tool when pivoting away
+  from MariaDB/MySQL).
+
+The apply step still uses the published .NET upgrader (DbUp + `MySqlDatabase` in `SchemaUpgrader.cs`). Changing database
+technology requires updating that project as described in [Initialization](#initialization), not only this shell script.
+
 ## Execution
 
 Instructions on how to apply schema updates.
