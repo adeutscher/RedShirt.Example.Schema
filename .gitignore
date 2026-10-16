@@ -39,3 +39,5 @@ Desktop.ini
 
 # Vim Swapfiles
 .*.swp
+
+.env
