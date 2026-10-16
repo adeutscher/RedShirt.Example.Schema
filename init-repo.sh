@@ -37,6 +37,9 @@ LABEL_NEW_DOCKER="$(printf '%s' "${LABEL_NEW}" | tr '[:upper:]' '[:lower:]' | tr
 DOCKER_IMAGE_NAME_OLD="${LABEL_OLD_DOCKER}-schema"
 DOCKER_IMAGE_NAME_NEW="${LABEL_NEW_DOCKER}-schema"
 
+SCHEMA_NAME_OLD="$(printf '%s' "${LABEL_OLD}" | tr '[:upper:]' '[:lower:]')"
+SCHEMA_NAME_NEW="$(printf '%s' "${LABEL_NEW}" | tr '[:upper:]' '[:lower:]')"
+
 while read -r f; do
   rename_project "${f}"
 done <<< "$(find . -type d -name "${NAMESPACE_OLD}*")"
@@ -48,6 +51,11 @@ while read -r f; do
   sed -i "s/${NAMESPACE_OLD}/${NAMESPACE_NEW}/g" "${f}"
   sed -i "s/${LABEL_OLD}_/${LABEL_NEW}_/g" "${f}"
   sed -i "s/${DOCKER_IMAGE_NAME_OLD}/${DOCKER_IMAGE_NAME_NEW}/g" "${f}"
+  sed -i "s/_SCHEMA_NAME=\"${SCHEMA_NAME_OLD}\"/_SCHEMA_NAME=\"${SCHEMA_NAME_NEW}\"/g" "${f}"
+  sed -i "s/_SCHEMA_NAME=${SCHEMA_NAME_OLD}/_SCHEMA_NAME=${SCHEMA_NAME_NEW}/g" "${f}"
+  sed -i "s/_SCHEMA_NAME\`: \`${SCHEMA_NAME_OLD}\`/_SCHEMA_NAME\`: \`${SCHEMA_NAME_NEW}\`/g" "${f}"
+  sed -i "s/DatabaseName = \"${SCHEMA_NAME_OLD}\"/DatabaseName = \"${SCHEMA_NAME_NEW}\"/g" "${f}"
+  sed -i "s/-${SCHEMA_NAME_OLD}\.sql/-${SCHEMA_NAME_NEW}.sql/g" "${f}"
 done <<< "$(find . \( \
   -name '*.cs' -o \
   -name '*.csproj' -o \
