@@ -48,5 +48,8 @@ done <<< "$(find . \( \
   -name '*.md' -o \
   -name '*.slnx' -o \
   -name '*.sh' -o \
+  -name 'Dockerfile' -o \
+  -name '.dockerignore' -o \
+  -name '.env.example' -o \
   \( -path './.github/*' -a \( -name '*.yml' -o -name '*.yaml' \) \) \
 \))"

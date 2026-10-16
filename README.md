@@ -124,6 +124,20 @@ To deploy updates, use the `update.sh` shorthand script:
 ./update.sh
 ```
 
+#### Docker
+
+Copy `.env.example` to `.env`, set the `EXAMPLE_SCHEMA_*` variables, and run:
+
+```bash
+./docker-update.sh
+```
+
+If the database listens on your host machine (not inside Docker), set `EXAMPLE_SCHEMA_HOST` to
+`host.docker.internal` in `.env`. The script adds a matching `host.docker.internal` host entry for Linux.
+
+Set `TESTS_ENABLE=1` when building the image if you want `dotnet test` to run during `docker build` (the default is
+`0` for faster applies).
+
 ### Local Database
 
 #### Setup
@@ -155,3 +169,15 @@ To deploy updates against the local SQL server, use the `local-update.sh` shorth
 ```bash
 ./local-update.sh
 ```
+
+#### Docker
+
+With `LOCAL_SQL_PASSWORD` set (same as [Local Database setup](#local-database)), run:
+
+```bash
+./local-docker-update.sh
+```
+
+This builds and runs the schema upgrader in Docker and connects to MariaDB/MySQL on the host via
+`host.docker.internal`. Alternatively, copy `.env.example` to `.env`, set `EXAMPLE_SCHEMA_HOST` to
+`host.docker.internal`, fill in the other variables, and use `./docker-update.sh`.
