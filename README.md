@@ -100,7 +100,8 @@ integration tests).
 MariaDB-specific logic lives in `scripts/dump-applied-schema.sh` in two marked blocks:
 
 * **Disposable database server**: Docker image (`MARIADB_IMAGE`), MariaDB bootstrap environment variables
-  (`MARIADB_ROOT_PASSWORD`, `MARIADB_DATABASE`), and readiness via `mariadb-admin ping`.
+  (`MARIADB_ROOT_PASSWORD`, `MARIADB_DATABASE`), and readiness via a TCP `mariadb` client on the same Docker
+  network (not `mariadb-admin ping` on localhost, which can succeed before remote connections work).
 * **Schema dump**: `mariadb-dump` with `--no-data` (replace with your engine's schema export tool when pivoting away
   from MariaDB/MySQL).
 

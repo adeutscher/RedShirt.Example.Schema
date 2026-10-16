@@ -68,35 +68,46 @@ docker run -d \
   -e "MARIADB_DATABASE=${REVIEW_SCHEMA_NAME}" \
   "${MARIADB_IMAGE}" >/dev/null
 
-echo "Waiting for MariaDB (${MARIADB_IMAGE})..." >&2
-deadline=$((SECONDS + 120))
-until docker exec "${DB_CONTAINER}" mariadb-admin ping \
-  -h localhost \
-  -u root \
-  "-p${MARIADB_ROOT_PASSWORD}" \
-  --silent >/dev/null 2>&1
-do
-  if [ "${SECONDS}" -ge "${deadline}" ]; then
-    echo "MariaDB did not become ready within 120 seconds" >&2
-    exit 1
-  fi
-  sleep 1
-done
-
 echo "Building schema upgrader image (${DOCKER_IMAGE})..." >&2
 docker build \
   --build-arg "TESTS_ENABLE=${TESTS_ENABLE}" \
   -t "${DOCKER_IMAGE}" \
   . >&2
 
+# MariaDB-specific: readiness must use TCP from another container on the same Docker
+# network (how the upgrader connects). mariadb-admin ping against localhost inside the
+# DB container can succeed before remote TCP connections are accepted.
+echo "Waiting for MariaDB (${MARIADB_IMAGE}) on ${DB_CONTAINER}..." >&2
+deadline=$((SECONDS + 120))
+until docker run --rm \
+  --network "${NETWORK_NAME}" \
+  "${MARIADB_IMAGE}" \
+  mariadb \
+  -h "${DB_CONTAINER}" \
+  -u "${REVIEW_SCHEMA_USER}" \
+  "-p${MARIADB_ROOT_PASSWORD}" \
+  -e "SELECT 1" \
+  >/dev/null 2>&1
+do
+  if [ "${SECONDS}" -ge "${deadline}" ]; then
+    echo "MariaDB did not accept TCP connections within 120 seconds" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
 echo "Applying schema updates..." >&2
-docker run --rm \
+if ! docker run --rm \
   --network "${NETWORK_NAME}" \
   -e "EXAMPLE_SCHEMA_HOST=${DB_CONTAINER}" \
   -e "EXAMPLE_SCHEMA_NAME=${REVIEW_SCHEMA_NAME}" \
   -e "EXAMPLE_SCHEMA_USER=${REVIEW_SCHEMA_USER}" \
   -e "EXAMPLE_SCHEMA_PASSWORD=${MARIADB_ROOT_PASSWORD}" \
   "${DOCKER_IMAGE}" >&2
+then
+  echo "Schema upgrade failed" >&2
+  exit 1
+fi
 
 # =============================================================================
 # MariaDB-specific: schema dump command (replace with pg_dump, sqlpackage, etc.)
