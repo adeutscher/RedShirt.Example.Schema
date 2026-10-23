@@ -1,4 +1,5 @@
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled AS base
+# hadolint ignore=DL3066
 USER $APP_UID
 WORKDIR /app
 
@@ -14,6 +15,7 @@ COPY global.json .
 RUN dotnet restore
 RUN dotnet build -c $BUILD_CONFIGURATION
 ARG TESTS_ENABLE=1
+# hadolint ignore=SC2288
 RUN \[ ${TESTS_ENABLE} -ne 1 \] \
   || \
       ([ -d "test" ] \
