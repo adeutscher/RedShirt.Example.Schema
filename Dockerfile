@@ -12,8 +12,8 @@ COPY test test
 COPY *.slnx .
 COPY global.json .
 
-RUN dotnet restore
-RUN dotnet build -c $BUILD_CONFIGURATION
+RUN dotnet restore \
+ && dotnet build -c $BUILD_CONFIGURATION
 ARG TESTS_ENABLE=1
 # hadolint ignore=SC2288
 RUN \[ ${TESTS_ENABLE} -ne 1 \] \
@@ -23,7 +23,7 @@ RUN \[ ${TESTS_ENABLE} -ne 1 \] \
 
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
-RUN rm -rf test *slnx global.json \
+RUN rm -rf test ./*.slnx global.json \
  && dotnet publish "src/RedShirt.Example.Schema/RedShirt.Example.Schema.csproj" --self-contained -c $BUILD_CONFIGURATION -o /app/publish \
  && find /app/publish -type d -exec chmod 500 {} + \
  && find /app/publish -type f -exec chmod 400 {} + \
