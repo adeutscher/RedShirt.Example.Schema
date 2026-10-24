@@ -19,4 +19,4 @@ docker build \
 docker run --rm \
   --env-file "${ENV_FILE}" \
   --add-host=host.docker.internal:host-gateway \
-  "${DOCKER_IMAGE}"
+  "${DOCKER_IMAGE}" "$@"

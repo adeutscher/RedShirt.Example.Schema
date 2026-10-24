@@ -24,4 +24,6 @@ else
   echo "==> hadolint not on PATH, skipping (install on the runner to enable)"
 fi
 
+./scripts/cicd/check-scripts.sh
+
 echo "==> lint clean"

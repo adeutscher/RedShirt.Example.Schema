@@ -17,4 +17,4 @@ EXAMPLE_SCHEMA_USER=root
 EXAMPLE_SCHEMA_PASSWORD=${LOCAL_SQL_PASSWORD}
 EOF
 
-ENV_FILE="${ENV_FILE}" ./docker-update.sh
+ENV_FILE="${ENV_FILE}" ./docker-update.sh "$@"

@@ -47,7 +47,11 @@ When initializing this template:
    username "root" is hard-coded in, which may need changing if your chosen database technology does not use root (e.g.
    SQL Server prefers "sa").
 
-4. Once you have initialized this template, you will want to remove this [Template](#template) section from this README.
+4. `scripts/cicd/check-scripts.sh` exempts `Scripts/0000/` from its naming and immutability checks so that the example
+   script can be edited while this repository is a template. Once you have initialized this template and the example
+   script has been applied anywhere that matters, remove that exemption.
+
+5. Once you have initialized this template, you will want to remove this [Template](#template) section from this README.
 
 ## File Organization and Maintenance
 
@@ -70,6 +74,20 @@ might be placed at `Scripts/2026/2026-09/2026-09-01-02-create-records-table.sql`
 The DbUp library's incremental updates means that applied scripts should never be updated (especially scripts that have
 been established in the default branch). Editing an already-applied file will not re-run on existing DBs and will desync
 environments.
+
+Both rules are enforced by `scripts/cicd/check-scripts.sh`, which runs as part of `scripts/cicd/lint.sh`:
+
+* Every file under `Scripts/` must be a `.sql` file named `Scripts/YYYY/YYYY-MM/YYYY-MM-DD-NN-lowercase-name.sql`, with
+  the directory year and month matching the file name.
+* Scripts that already exist on the base branch must not be modified, renamed, or deleted. On pull requests the base is
+  the pull request's target branch. Locally it defaults to `origin/develop` and can be changed with `BASE_REF`.
+
+See [Update Script Lint](docs/update-script-lint.md) for how the checks work and what they do not catch.
+
+Each script runs in its own transaction, so a failed script is not journaled and is retried on the next run. MariaDB
+commits DDL statements implicitly, though, so see
+[Transactions and DDL](docs/mariadb-table-reminders.md#transactions-and-ddl) before writing scripts that mix several
+statements.
 
 ## Development
 
@@ -173,6 +191,23 @@ Instructions on how to apply schema updates.
 
 The target database must already exist before running `update.sh` or `local-update.sh`. These scripts apply schema
 patches to an existing database; they do not create the database itself.
+
+### Dry Run
+
+To list the scripts that would be applied without changing the database, pass `--dry-run` or set
+`EXAMPLE_SCHEMA_DRY_RUN=1`. The dry run still connects to the target database to read the journal table, but does not
+create it.
+
+```bash
+./update.sh --dry-run
+```
+
+```bash
+./local-update.sh --dry-run
+```
+
+The Docker scripts (`docker-update.sh` and `local-docker-update.sh`) accept `--dry-run` as well, or
+`EXAMPLE_SCHEMA_DRY_RUN=1` can be set in `.env`.
 
 ### Deployed Database
 

@@ -5,6 +5,7 @@ const string varHost = "EXAMPLE_SCHEMA_HOST";
 const string varName = "EXAMPLE_SCHEMA_NAME";
 const string varUser = "EXAMPLE_SCHEMA_USER";
 const string varPassword = "EXAMPLE_SCHEMA_PASSWORD";
+const string varDryRun = "EXAMPLE_SCHEMA_DRY_RUN";
 
 var schemaHost = Environment.GetEnvironmentVariable(varHost);
 var schemaName = Environment.GetEnvironmentVariable(varName);
@@ -33,4 +34,12 @@ if (string.IsNullOrWhiteSpace(schemaPassword))
 
 var connectionString = $"server={schemaHost};user={schemaUser};password={schemaPassword};database={schemaName};";
 
-return SchemaUpgrader.Upgrade(connectionString, schemaName);
+// Dry run lists pending scripts without applying them. Enable with --dry-run or EXAMPLE_SCHEMA_DRY_RUN=1 (or "true").
+var dryRunValue = Environment.GetEnvironmentVariable(varDryRun)?.Trim();
+var dryRun = args.Contains("--dry-run")
+             || dryRunValue == "1"
+             || string.Equals(dryRunValue, "true", StringComparison.OrdinalIgnoreCase);
+
+return dryRun
+    ? SchemaUpgrader.DryRun(connectionString, schemaName)
+    : SchemaUpgrader.Upgrade(connectionString, schemaName);
