@@ -82,6 +82,8 @@ Both rules are enforced by `scripts/cicd/check-scripts.sh`, which runs as part o
 * Scripts that already exist on the base branch must not be modified, renamed, or deleted. On pull requests the base is
   the pull request's target branch. Locally it defaults to `origin/develop` and can be changed with `BASE_REF`.
 
+See [Update Script Lint](docs/update-script-lint.md) for how the checks work and what they do not catch.
+
 Each script runs in its own transaction, so a failed script is not journaled and is retried on the next run. MariaDB
 commits DDL statements implicitly, though, so see
 [Transactions and DDL](docs/mariadb-table-reminders.md#transactions-and-ddl) before writing scripts that mix several
