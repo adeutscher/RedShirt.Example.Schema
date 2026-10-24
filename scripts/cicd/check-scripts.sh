@@ -17,6 +17,9 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
 scripts_dir="src/RedShirt.Example.Schema/Scripts"
+# Scripts named before the naming rule existed. They are already applied, so renaming them would make DbUp run them
+# again. Each entry is an exact path, exempt from the name check only. The immutability check still covers them.
+legacy_names=()
 template_dir="${scripts_dir}/0000/"
 
 failed=0
@@ -24,6 +27,9 @@ failed=0
 echo "==> update script names"
 while IFS= read -r path; do
   [ -z "${path}" ] && continue
+  for legacy in "${legacy_names[@]}"; do
+    [ "${path}" = "${legacy}" ] && continue 2
+  done
   [[ "${path}" == "${template_dir}"* ]] && continue
 
   relative="${path#"${scripts_dir}/"}"

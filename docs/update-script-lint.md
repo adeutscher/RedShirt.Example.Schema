@@ -12,6 +12,9 @@ The script runs two independent checks. It reports every problem it finds, then 
   files, so the path follows a namespace change.
 * `Scripts/0000/` is exempt from both checks. It holds the template's disposable example script, which is edited in
   place while this repository is a template. Remove the exemption once the template has been initialized.
+* `legacy_names` in `check-scripts.sh` lists exact paths that are exempt from the name check only. It is for scripts
+  that were applied before the naming rule existed, since renaming an applied script makes DbUp run it again. The
+  immutability check still covers them. Never add new scripts to the list.
 
 ## Check 1: File Names
 
