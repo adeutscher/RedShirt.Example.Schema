@@ -98,16 +98,71 @@ The script requires a working Docker daemon. It does not use your `.env` or loca
 `DOCKER_IMAGE`, `TESTS_ENABLE`, `EXAMPLE_SCHEMA_NAME`, and `MARIADB_IMAGE` (defaults to `mariadb:12.3.2`, matching
 integration tests).
 
-MariaDB-specific logic lives in `scripts/dump-applied-schema.sh` in two marked blocks:
+Progress, warning and error messages from these scripts go to stderr and are coloured when stderr is a terminal. Set
+`NO_COLOR` to turn colours off.
+
+The disposable database is shared with the [table listing](#applied-table-listing) and
+[DTO suggestion](#dto-suggestion) scripts through `scripts/lib/disposable-db.sh`. MariaDB-specific logic lives in that
+file in two marked blocks:
 
 * **Disposable database server**: Docker image (`MARIADB_IMAGE`), MariaDB bootstrap environment variables
   (`MARIADB_ROOT_PASSWORD`, `MARIADB_DATABASE`), and readiness via a TCP `mariadb` client on the same Docker
   network (not `mariadb-admin ping` on localhost, which can succeed before remote connections work).
-* **Schema dump**: `mariadb-dump` with `--no-data` (replace with your engine's schema export tool when pivoting away
-  from MariaDB/MySQL).
+* **Queries and schema dump**: `mariadb --batch` for `information_schema` queries and `mariadb-dump` with `--no-data`
+  (replace with your engine's client and schema export tool when pivoting away from MariaDB/MySQL).
 
 The apply step still uses the published .NET upgrader (DbUp + `MySqlDatabase` in `SchemaUpgrader.cs`). Changing database
-technology requires updating that project as described in [Initialization](#initialization), not only this shell script.
+technology requires updating that project as described in [Initialization](#initialization), not only these shell
+scripts.
+
+### Applied table listing
+
+`scripts/list-tables.sh` applies all embedded update scripts to the same kind of disposable database, then prints the
+table names in the applied schema, one per line. The DbUp journal table (`Patches`) is left out unless `--all` is given.
+
+```bash
+./scripts/list-tables.sh
+./scripts/list-tables.sh --all -o /tmp/example-tables.txt
+```
+
+### DTO suggestion
+
+`scripts/suggest-dto.sh` applies all embedded update scripts to the same kind of disposable database, then prints a
+suggested C# DTO for one table, following the DTO conventions of the API template (such as `OrderDto`):
+
+* Every column becomes a `required` property with an `init` accessor. Nullable columns get a nullable type.
+* The class is marked with `[DbTable]`. A single-column primary key is marked with `[DbKey]`. `CreatedAtUtc` or
+  `DateCreatedUtc` is marked with `[CreatedAtProperty]`, and `UpdatedAtUtc` or `DateUpdatedUtc` with
+  `[UpdatedAtProperty]`.
+* The class name defaults to `<Table>Dto`. Plural table names are not singularised, so use `--class-name` where needed.
+* With `--root-namespace`, the `using` directives and namespace for the API's `DataStores` layout are written as well.
+  Without it, only the class is printed and the `using` directives are left to the developer.
+
+```bash
+./scripts/suggest-dto.sh UploadAggregate
+./scripts/suggest-dto.sh Customers --class-name CustomerDto --root-namespace RedShirt.Example.Api
+./scripts/suggest-dto.sh Order --root-namespace RedShirt.Example.Api -o /tmp/OrderDto.cs
+```
+
+With `--entity-framework`, the script instead suggests an Entity Framework Core entity, following the conventions of
+the API template's EF Core stores (such as `CustomerEntity`):
+
+* The class is `internal sealed`, named `<Table>Entity`, and marked with `[Table]`. With `--root-namespace`, it is
+  placed in the `<root>.DataStores.<Name>.Implementation.Entities` namespace.
+* Properties have `set` accessors, since Entity Framework updates tracked entities in place. Only non-nullable columns
+  are `required`.
+* A commented-out `OnModelCreating` block follows the class, with the key, string lengths, decimal precision, column
+  name mappings and indexes read from the applied schema.
+* Entity Framework does not fill in created/updated timestamps, so a warning reminds you to set them in code or with
+  a `SaveChanges` interceptor.
+
+```bash
+./scripts/suggest-dto.sh Customers --entity-framework --class-name CustomerEntity --root-namespace RedShirt.Example.Api
+```
+
+The suggestion is a starting point. Warnings about things that need attention (composite or non-`Guid` keys, missing
+timestamp columns, renamed columns, unmapped types) are printed to stderr. Integer columns that represent enums or flags
+(such as `UploadAggregate.State`) are suggested as plain integers.
 
 ## Execution
 
