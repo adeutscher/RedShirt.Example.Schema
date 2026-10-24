@@ -285,3 +285,30 @@ Things to remember:
 * Code that reads the column by name, such as DTOs and queries in the API, breaks until it is updated. Plan the rename
   alongside the code change, or add the new column, copy the data, and drop the old column in a later script.
 * With DbUp, a rename is a new update script. Never edit the script that originally created the column.
+
+## Transactions and DDL
+
+DbUp runs each update script in its own transaction. If a script fails, its transaction is rolled back, the script is
+not added to the `Patches` journal, and it runs again on the next upgrade.
+
+MariaDB cannot roll back DDL. Statements such as `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`, `RENAME TABLE`, and
+`CREATE INDEX` commit the open transaction implicitly before and after they run. In practice:
+
+* DML (`INSERT`, `UPDATE`, `DELETE`) in a failed script is rolled back, unless a DDL statement ran after it in the same
+  script.
+* DDL that ran before the failing statement stays applied. The rerun then meets a half-applied script.
+
+To keep a failed script safe to rerun:
+
+* Keep each script small, ideally one DDL change per script.
+* Prefer idempotent forms such as `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `DROP INDEX IF EXISTS`, and
+  `DROP TABLE IF EXISTS`.
+* Put data backfills in their own script, after the script that changes the table.
+
+```sql
+ALTER TABLE `Order`
+    ADD COLUMN IF NOT EXISTS `Notes` TEXT NULL;
+
+ALTER TABLE `Order`
+    ADD INDEX IF NOT EXISTS `IX_Order_CustomerId` (`CustomerId`);
+```
