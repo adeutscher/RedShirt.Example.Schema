@@ -6,6 +6,9 @@
         <File Path="README.md"/>
         <File Path="update.sh"/>
     </Folder>
+    <Folder Name="/Solution Items/docs/">
+        <File Path="docs/mariadb-table-reminders.md"/>
+    </Folder>
     <Folder Name="/test/">
         <Project Path="test/RedShirt.Example.Schema.IntegrationTests/RedShirt.Example.Schema.IntegrationTests.csproj"/>
     </Folder>

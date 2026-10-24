@@ -76,6 +76,9 @@ environments.
 To write initial statements for adjusting tables, it is encouraged to use a database tool such as DBeaver to output
 proposed changes and then applying them to `.sql` update files in this project.
 
+For a quick refresher on MariaDB table syntax and other features, see the
+[MariaDB Table Reminders](docs/mariadb-table-reminders.md) document.
+
 Integration tests under `test/RedShirt.Example.Schema.IntegrationTests` use Testcontainers and require a working Docker
 daemon (they spin up a MariaDB container to apply and verify schema scripts). Run them with:
 
