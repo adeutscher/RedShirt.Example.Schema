@@ -24,7 +24,8 @@ When initializing this template:
     ```bash
    ./init-repo.sh "Malamute.Schema" PROJECT_MALAMUTE
     ```
-    * After this point, `init-repo.sh` can be safely deleted.
+    * The current namespace and label are detected from the repository, so the script can be run again later to move
+      to another namespace and/or label. It can also be safely deleted once you are settled.
 
 2. This template was written with MariaDB/MySQL in mind. If you are not planning to use a MySQL-compatible server when
    applying this template, then please consider the following:
