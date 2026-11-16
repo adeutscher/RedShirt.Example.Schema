@@ -62,3 +62,31 @@ CREATE TABLE IF NOT EXISTS `UploadEvent`
     PRIMARY KEY (`Id`),
     KEY `IX_UploadEvent_UploadId` (`UploadId`)
 );
+
+-- Background jobs run inside the API (see the API's BackgroundJobs projects). One row per job.
+CREATE TABLE IF NOT EXISTS `BackgroundJob`
+(
+    `Id` CHAR(36) NOT NULL,
+    `DateCreatedUtc` DATETIME(6) NOT NULL,
+    `DateUpdatedUtc` DATETIME(6) NOT NULL,
+    -- BackgroundJobType enum (1 = ValidateUpload, 2 = MoveUpload). Picks the handler.
+    `Type` INT NOT NULL,
+    -- BackgroundJobState enum: 0 Pending, 1 Running, 2 Succeeded, 3 Failed.
+    `State` INT NOT NULL,
+    -- The job type's parameters model.
+    `ParametersJson` JSON NOT NULL,
+    -- How many times the job has been leased.
+    `Attempts` INT NOT NULL DEFAULT 0,
+    -- Not leased before this time. Set by retry back-off.
+    `DueAtUtc` DATETIME(6) NOT NULL,
+    `LeaseOwner` VARCHAR(128) NULL,
+    `LeaseExpiresAtUtc` DATETIME(6) NULL,
+    `CompletedAtUtc` DATETIME(6) NULL,
+    -- Detail reported with the most recent outcome, such as why an attempt failed.
+    `Detail` TEXT NULL,
+    PRIMARY KEY (`Id`),
+    KEY `IX_BackgroundJob_State_DueAtUtc` (`State`, `DueAtUtc`),
+    -- Used by the cleanup of old finished jobs.
+    KEY `IX_BackgroundJob_State_CompletedAtUtc` (`State`, `CompletedAtUtc`),
+    KEY `IX_BackgroundJob_Type` (`Type`)
+);
