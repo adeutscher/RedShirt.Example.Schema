@@ -221,6 +221,26 @@ Set the following necessary environment variables in your `~/.bashrc` file:
   schema.
 * `EXAMPLE_SCHEMA_PASSWORD`: User password to access the target schema
 
+The following optional variables control TLS:
+
+* `EXAMPLE_SCHEMA_SSL_MODE`: TLS mode for the connection. Defaults to `Required`. See the table below.
+* `EXAMPLE_SCHEMA_SSL_CA`: Path to a CA certificate file (PEM) used to validate the server certificate with `VerifyCA`
+  or `VerifyFull`. When it is not set, the system trust store is used. With Docker, the file must be mounted into the
+  container and the path must be the path inside the container.
+
+| Mode         | Encrypted      | Server certificate checked          |
+| ------------ | -------------- | ----------------------------------- |
+| `None`       | No             | No                                  |
+| `Preferred`  | When available | No                                  |
+| `Required`   | Yes            | No                                  |
+| `VerifyCA`   | Yes            | Signed by a trusted CA              |
+| `VerifyFull` | Yes            | Trusted CA and host name must match |
+
+The default, `Required`, never falls back to plaintext, but it does not protect against an attacker who can present
+their own certificate. Use `VerifyFull` for deployed databases wherever a CA certificate is available. Use `Preferred`
+or `None` only for a local server that has no TLS set up. MariaDB 11.4 and later turn on TLS by default with a
+generated certificate, so `Required` works with them without extra setup.
+
 Example:
 
 ```bash
@@ -269,6 +289,9 @@ local connection defaults:
 * `EXAMPLE_SCHEMA_HOST`: `127.0.0.1`
 * `EXAMPLE_SCHEMA_NAME`: `example`
 * `EXAMPLE_SCHEMA_USER`: `root`
+
+TLS defaults to `Required`, as for a deployed database. If your local server has no TLS set up, set
+`EXAMPLE_SCHEMA_SSL_MODE=Preferred` (or `None`) in your environment before running the local scripts.
 
 Example:
 
