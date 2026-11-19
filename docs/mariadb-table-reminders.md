@@ -312,3 +312,21 @@ ALTER TABLE `Order`
 ALTER TABLE `Order`
     ADD INDEX IF NOT EXISTS `IX_Order_CustomerId` (`CustomerId`);
 ```
+
+### Idempotent Forms Can Hide Drift
+
+`IF NOT EXISTS` checks only the name. When the object already exists, MariaDB skips the statement with a warning, not
+an error, even if the existing object looks nothing like the one in the script. The script still succeeds and is
+journaled, so the journal then claims a shape the database does not have. For example:
+
+* `CREATE TABLE IF NOT EXISTS` keeps an existing table with other columns, types, keys, or collations.
+* `ADD COLUMN IF NOT EXISTS` keeps an existing column of another type or nullability.
+* `ADD INDEX IF NOT EXISTS` keeps an existing index with the same name on other columns, or one that is not unique.
+
+That happens when a database was changed by hand, by another tool, or by a different version of a script before the
+journal knew about it. To catch it:
+
+* Use the idempotent forms for rerun safety only, not to adopt objects that may already exist with another shape.
+* After upgrading an existing database, compare its schema with a fresh one, for example with
+  `scripts/dump-applied-schema.sh` and `mariadb-dump --no-data` against the target, and look for differences.
+* When an upgrade logs a "Note" or warning that an object already exists, check that object before moving on.

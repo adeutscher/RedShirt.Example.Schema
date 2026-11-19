@@ -47,9 +47,11 @@ When initializing this template:
    username "root" is hard-coded in, which may need changing if your chosen database technology does not use root (e.g.
    SQL Server prefers "sa").
 
-4. `scripts/cicd/check-scripts.sh` exempts `Scripts/0000/` from its naming and immutability checks so that the example
-   script can be edited while this repository is a template. Once you have initialized this template and the example
-   script has been applied anywhere that matters, remove that exemption.
+4. `scripts/cicd/check-scripts.sh` exempts `Scripts/0000/` from its naming check, and from its immutability check
+   while `template_mode=1`, so that the example script can be edited while this repository is a template. The first
+   run of `init-repo.sh` sets `template_mode=0`, after which the seed script is treated as applied and must not be
+   edited. Later runs of `init-repo.sh` leave the seed script's name alone for the same reason. If you need to change
+   the seed script before it has been applied anywhere, set `template_mode=1` again for that change.
 
 5. Once you have initialized this template, you will want to remove this [Template](#template) section from this README.
 
@@ -83,6 +85,18 @@ Both rules are enforced by `scripts/cicd/check-scripts.sh`, which runs as part o
   the pull request's target branch. Locally it defaults to `origin/develop` and can be changed with `BASE_REF`.
 
 See [Update Script Lint](docs/update-script-lint.md) for how the checks work and what they do not catch.
+
+The upgrader also checks this at runtime. DbUp journals scripts by name only, so the upgrader stores a SHA-256 checksum
+of each applied script in a `PatchChecksums` table, written in the same transaction as the journal entry. Before
+applying anything, an upgrade or dry run compares every applied script with its checksum and stops without changing
+the database if one was edited, or if a journaled script is no longer embedded (renamed or deleted). Checksums ignore
+line endings, so a Windows checkout matches a Linux one. Scripts applied before checksums were kept have their
+checksums recorded by the next upgrade, and are trusted as they are at that point.
+
+Only one upgrade of a database runs at a time. An upgrade takes a server-wide named lock (`GET_LOCK`) before checking
+or applying anything, so upgrades started together, such as from several deployment replicas, run one after another.
+An upgrade waits up to five minutes for another to finish, then stops without applying anything. If an upgrade process
+dies, the server releases its lock when the connection closes. Dry runs do not take the lock.
 
 Each script runs in its own transaction, so a failed script is not journaled and is retried on the next run. MariaDB
 commits DDL statements implicitly, though, so see
@@ -139,7 +153,8 @@ scripts.
 ### Applied table listing
 
 `scripts/list-tables.sh` applies all embedded update scripts to the same kind of disposable database, then prints the
-table names in the applied schema, one per line. The DbUp journal table (`Patches`) is left out unless `--all` is given.
+table names in the applied schema, one per line. The DbUp journal table (`Patches`) and the script checksum table
+(`PatchChecksums`) are left out unless `--all` is given.
 
 ```bash
 ./scripts/list-tables.sh
@@ -221,6 +236,26 @@ Set the following necessary environment variables in your `~/.bashrc` file:
   schema.
 * `EXAMPLE_SCHEMA_PASSWORD`: User password to access the target schema
 
+The following optional variables control TLS:
+
+* `EXAMPLE_SCHEMA_SSL_MODE`: TLS mode for the connection. Defaults to `Required`. See the table below.
+* `EXAMPLE_SCHEMA_SSL_CA`: Path to a CA certificate file (PEM) used to validate the server certificate with `VerifyCA`
+  or `VerifyFull`. When it is not set, the system trust store is used. With Docker, the file must be mounted into the
+  container and the path must be the path inside the container.
+
+| Mode         | Encrypted      | Server certificate checked          |
+| ------------ | -------------- | ----------------------------------- |
+| `None`       | No             | No                                  |
+| `Preferred`  | When available | No                                  |
+| `Required`   | Yes            | No                                  |
+| `VerifyCA`   | Yes            | Signed by a trusted CA              |
+| `VerifyFull` | Yes            | Trusted CA and host name must match |
+
+The default, `Required`, never falls back to plaintext, but it does not protect against an attacker who can present
+their own certificate. Use `VerifyFull` for deployed databases wherever a CA certificate is available. Use `Preferred`
+or `None` only for a local server that has no TLS set up. MariaDB 11.4 and later turn on TLS by default with a
+generated certificate, so `Required` works with them without extra setup.
+
 Example:
 
 ```bash
@@ -269,6 +304,9 @@ local connection defaults:
 * `EXAMPLE_SCHEMA_HOST`: `127.0.0.1`
 * `EXAMPLE_SCHEMA_NAME`: `example`
 * `EXAMPLE_SCHEMA_USER`: `root`
+
+TLS defaults to `Required`, as for a deployed database. If your local server has no TLS set up, set
+`EXAMPLE_SCHEMA_SSL_MODE=Preferred` (or `None`) in your environment before running the local scripts.
 
 Example:
 

@@ -24,6 +24,8 @@ REVIEW_SCHEMA_PASSWORD="${REVIEW_SCHEMA_PASSWORD:-schema-review-local}"
 
 # Matches SchemaUpgrader.JournalTableName.
 JOURNAL_TABLE_NAME="${JOURNAL_TABLE_NAME:-Patches}"
+# Matches ScriptChecksums.TableName.
+CHECKSUM_TABLE_NAME="${CHECKSUM_TABLE_NAME:-PatchChecksums}"
 
 # =============================================================================
 # MariaDB-specific: disposable database server (image, bootstrap env, readiness)

@@ -1,8 +1,10 @@
 #!/bin/bash
 
-cd "$(readlink -f "$(dirname "${0}")")"
+set -euo pipefail
 
-if [ -z "${LOCAL_SQL_PASSWORD}" ]; then
+script_dir="$(readlink -f "$(dirname "${0}")")" && cd "${script_dir}" || exit 1
+
+if [ -z "${LOCAL_SQL_PASSWORD:-}" ]; then
   echo "LOCAL_SQL_PASSWORD is unset" >&2
   exit 1
 fi

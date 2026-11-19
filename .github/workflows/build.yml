@@ -7,13 +7,57 @@ on:
     branches:
       - develop
 
+# The job only reads the repository. Without this, GITHUB_TOKEN gets the repository's default permissions, which may
+# include write access.
+permissions:
+  contents: read
+
 jobs:
   build:
     if: github.event_name == 'push' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    env:
+      # Pinned tool downloads. When bumping a version, update its digest from the publisher:
+      #   gitleaks: gitleaks_<version>_checksums.txt on the GitHub release
+      #   hadolint: hadolint-linux-x86_64.sha256 on the GitHub release
+      GITLEAKS_VERSION: 8.24.2
+      GITLEAKS_SHA256: fa0500f6b7e41d28791ebc680f5dd9899cd42b58629218a5f041efa899151a8e
+      HADOLINT_VERSION: 2.15.1
+      HADOLINT_SHA256: c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # Do not leave GITHUB_TOKEN in .git/config, where code from the branch under test could read it.
+          persist-credentials: false
+          # Full history, so that gitleaks scans every commit and not only the tip. scan.sh fails on a shallow clone.
+          fetch-depth: 0
+
+      # check-scripts.sh compares update scripts against a base: the target branch for a pull request, or the commit the
+      # branch pointed at before the push. Fetch it here, before any code from the branch runs, with the token given to
+      # this one command only, so that this also works for private repositories.
+      - name: Fetch base for script checks
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_REF: ${{ github.base_ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          TOKEN: ${{ github.token }}
+        run: |
+          auth="$(printf 'x-access-token:%s' "${TOKEN}" | base64 -w0)"
+          fetch() {
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" \
+              fetch --quiet --no-tags origin "$@"
+          }
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            fetch "+refs/heads/${PR_BASE_REF}:refs/remotes/origin/${PR_BASE_REF}"
+          elif [[ "${PUSH_BEFORE}" =~ ^0+$ ]]; then
+            # A newly created branch has no previous commit, so there is nothing to compare against.
+            echo "New branch, no previous commit to compare update scripts against."
+            echo "BASE_REF=HEAD" >> "${GITHUB_ENV}"
+          else
+            fetch "+${PUSH_BEFORE}:refs/ci/push-before"
+            echo "BASE_REF=refs/ci/push-before" >> "${GITHUB_ENV}"
+          fi
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
@@ -22,8 +66,21 @@ jobs:
 
       - name: Install gitleaks
         run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.2/gitleaks_8.24.2_linux_x64.tar.gz \
-            | tar -xz -C /usr/local/bin gitleaks
+          ./scripts/cicd/fetch-verified.sh \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            sha256 "$GITLEAKS_SHA256" "$RUNNER_TEMP/gitleaks.tar.gz"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C /usr/local/bin gitleaks
+          rm "$RUNNER_TEMP/gitleaks.tar.gz"
+          gitleaks version
+
+      - name: Install hadolint
+        run: |
+          ./scripts/cicd/fetch-verified.sh \
+            "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64" \
+            sha256 "$HADOLINT_SHA256" "$RUNNER_TEMP/hadolint"
+          install -m 0755 "$RUNNER_TEMP/hadolint" /usr/local/bin/hadolint
+          rm "$RUNNER_TEMP/hadolint"
+          hadolint --version
 
       - name: Lint
         run: ./scripts/cicd/lint.sh

@@ -10,8 +10,10 @@ The script runs two independent checks. It reports every problem it finds, then 
 
 * The scripts directory is `src/RedShirt.Example.Schema/Scripts`. `init-repo.sh` rewrites the namespace in `*.sh`
   files, so the path follows a namespace change.
-* `Scripts/0000/` is exempt from both checks. It holds the template's disposable example script, which is edited in
-  place while this repository is a template. Remove the exemption once the template has been initialized.
+* `Scripts/0000/` holds the template's seed script. It is always exempt from the name check. It is exempt from the
+  immutability check only while `template_mode=1` in `check-scripts.sh`, so that it can be edited in place while this
+  repository is a template. The first run of `init-repo.sh` sets `template_mode=0`, after which the seed script is
+  checked like any other applied script.
 * `legacy_names` in `check-scripts.sh` lists exact paths that are exempt from the name check only. It is for scripts
   that were applied before the naming rule existed, since renaming an applied script makes DbUp run it again. The
   immutability check still covers them. Never add new scripts to the list.
@@ -49,20 +51,29 @@ Scripts that already exist on the base branch must not be modified, renamed, or 
 
 ### Choosing the Base
 
-* **Pull request in CI**: GitHub sets `GITHUB_BASE_REF` to the pull request's target branch. `actions/checkout` makes
-  a shallow clone without other branches, so the script fetches that branch (`--depth=1`) into
-  `refs/remotes/origin/<branch>`.
+* **Pull request in CI**: GitHub sets `GITHUB_BASE_REF` to the pull request's target branch. The workflow checks out
+  the full history (`fetch-depth: 0`, which gitleaks needs), and its "Fetch base for script checks" step also fetches
+  that branch into `refs/remotes/origin/<branch>`, with the token passed to that one command, since checkout does not
+  keep credentials for later steps. If the branch is still missing, the script fetches it itself, with `--depth=1`
+  only when the clone is already shallow.
+* **Push in CI**: the same step fetches the commit the branch pointed at before the push (`github.event.before`) into
+  `refs/ci/push-before` and sets `BASE_REF` to it, so commits pushed straight to `develop` are checked as well. A push
+  that creates a branch has no previous commit, so `BASE_REF` is set to `HEAD` and there is nothing to compare.
 * **Locally**: `BASE_REF` if set, otherwise `origin/develop`.
-* **Base not available**: the check prints a skip message and passes. This covers clones without the remote branch.
+* **Base not available**: on CI (`CI=true`, which GitHub Actions sets), the check fails, since a check that could not
+  run must not pass. Elsewhere it prints a warning and skips the immutability check. This covers local clones without
+  the remote branch.
 
 ### Choosing the Commit to Compare
 
 * **Locally**: the script uses `git merge-base <base> HEAD`. If the base branch has gained scripts since the current
   branch was cut, comparing against the base directly would report those scripts as deleted. The merge base avoids
   that false failure.
-* **In CI**: the clone is shallow, so `git merge-base` fails and the script compares against the base directly. That is
-  still correct, because checkout on a pull request uses the merge commit (`refs/pull/N/merge`), which already contains
-  every script on the base.
+* **In CI**: the clone has full history, so the merge base is used here too. On a pull request, checkout uses the merge
+  commit (`refs/pull/N/merge`), so the merge base is the base branch's tip. On a push it is normally the commit before
+  the push.
+* **Shallow clones** (other pipelines): `git merge-base` fails and the script compares against the base directly. On a
+  pull request that is still correct, because the merge commit already contains every script on the base.
 
 ### Comparing
 
