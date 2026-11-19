@@ -44,8 +44,8 @@ When initializing this template:
 3. The `local-update.sh` script was made as a convenience button for local applies to a disposable database running on
    your local machine. If you would rather set up your environment variables in a different way, then you may wish to
    simply delete `local-update.sh` altogether. If you choose to keep `local-update.sh`, then please note that the
-   username "root" is hard-coded in, which may need changing if your chosen database technology does not use root (e.g.
-   SQL Server prefers "sa").
+   username defaults to "root" (overridable with `LOCAL_SQL_USER`), which may need changing if your chosen database
+   technology does not use root (e.g. SQL Server prefers "sa").
 
 4. `scripts/cicd/check-scripts.sh` exempts `Scripts/0000/` from its naming check, and from its immutability check
    while `template_mode=1`, so that the example script can be edited while this repository is a template. The first
@@ -385,7 +385,11 @@ local connection defaults:
 
 * `EXAMPLE_SCHEMA_HOST`: `127.0.0.1`
 * `EXAMPLE_SCHEMA_NAME`: `example`
-* `EXAMPLE_SCHEMA_USER`: `root`
+* `EXAMPLE_SCHEMA_USER`: `LOCAL_SQL_USER`, or `root` when that is not set
+
+`root` is kept as the default so that a fresh local server works without setup. To catch scripts that need more than
+the migration grant before they reach a deployed database, create a local migration user as described in
+[Database Users](#database-users) and set `LOCAL_SQL_USER` to it.
 
 TLS defaults to `Required`, as for a deployed database. If your local server has no TLS set up, set
 `EXAMPLE_SCHEMA_SSL_MODE=Preferred` (or `None`) in your environment before running the local scripts.

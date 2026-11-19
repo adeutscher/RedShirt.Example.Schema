@@ -15,7 +15,7 @@ trap 'rm -rf "${work_dir:?}"' EXIT
 cat >"${work_dir}/env" <<ENV
 EXAMPLE_SCHEMA_HOST=host.docker.internal
 EXAMPLE_SCHEMA_NAME=example
-EXAMPLE_SCHEMA_USER=root
+EXAMPLE_SCHEMA_USER=${LOCAL_SQL_USER:-root}
 EXAMPLE_SCHEMA_SSL_MODE=${EXAMPLE_SCHEMA_SSL_MODE:-Required}
 ENV
 
