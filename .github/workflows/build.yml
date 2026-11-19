@@ -66,6 +66,18 @@ jobs:
           echo "${GITLEAKS_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum -c -
           tar -xzf "${RUNNER_TEMP}/${archive}" -C /usr/local/bin gitleaks
 
+      - name: Install hadolint
+        env:
+          HADOLINT_VERSION: 2.15.1
+          # SHA-256 of hadolint-linux-x86_64 from the release page. Update it together with the version.
+          HADOLINT_SHA256: c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
+        run: |
+          binary="${RUNNER_TEMP}/hadolint"
+          curl -sSfL -o "${binary}" \
+            "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
+          echo "${HADOLINT_SHA256}  ${binary}" | sha256sum -c -
+          install -m 0755 "${binary}" /usr/local/bin/hadolint
+
       - name: Lint
         run: ./scripts/cicd/lint.sh
 
