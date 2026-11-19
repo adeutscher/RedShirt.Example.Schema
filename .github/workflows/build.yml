@@ -30,6 +30,8 @@ jobs:
         with:
           # Do not leave GITHUB_TOKEN in .git/config, where code from the branch under test could read it.
           persist-credentials: false
+          # Full history, so that gitleaks scans every commit and not only the tip. scan.sh fails on a shallow clone.
+          fetch-depth: 0
 
       # check-scripts.sh compares update scripts against a base: the target branch for a pull request, or the commit the
       # branch pointed at before the push. Fetch it here, before any code from the branch runs, with the token given to
@@ -44,7 +46,7 @@ jobs:
           auth="$(printf 'x-access-token:%s' "${TOKEN}" | base64 -w0)"
           fetch() {
             git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" \
-              fetch --quiet --no-tags --depth=1 origin "$@"
+              fetch --quiet --no-tags origin "$@"
           }
           if [ "${EVENT_NAME}" = "pull_request" ]; then
             fetch "+refs/heads/${PR_BASE_REF}:refs/remotes/origin/${PR_BASE_REF}"

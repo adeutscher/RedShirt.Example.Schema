@@ -51,10 +51,11 @@ Scripts that already exist on the base branch must not be modified, renamed, or 
 
 ### Choosing the Base
 
-* **Pull request in CI**: GitHub sets `GITHUB_BASE_REF` to the pull request's target branch. `actions/checkout` makes
-  a shallow clone without other branches, so the workflow's "Fetch base for script checks" step fetches that branch
-  (`--depth=1`) into `refs/remotes/origin/<branch>`. The workflow does this in its own step because checkout does not
-  keep credentials for later steps. If the branch is still missing, the script fetches it itself.
+* **Pull request in CI**: GitHub sets `GITHUB_BASE_REF` to the pull request's target branch. The workflow checks out
+  the full history (`fetch-depth: 0`, which gitleaks needs), and its "Fetch base for script checks" step also fetches
+  that branch into `refs/remotes/origin/<branch>`, with the token passed to that one command, since checkout does not
+  keep credentials for later steps. If the branch is still missing, the script fetches it itself, with `--depth=1`
+  only when the clone is already shallow.
 * **Push in CI**: the same step fetches the commit the branch pointed at before the push (`github.event.before`) into
   `refs/ci/push-before` and sets `BASE_REF` to it, so commits pushed straight to `develop` are checked as well. A push
   that creates a branch has no previous commit, so `BASE_REF` is set to `HEAD` and there is nothing to compare.
@@ -68,9 +69,11 @@ Scripts that already exist on the base branch must not be modified, renamed, or 
 * **Locally**: the script uses `git merge-base <base> HEAD`. If the base branch has gained scripts since the current
   branch was cut, comparing against the base directly would report those scripts as deleted. The merge base avoids
   that false failure.
-* **In CI**: the clone is shallow, so `git merge-base` fails and the script compares against the base directly. That is
-  still correct, because checkout on a pull request uses the merge commit (`refs/pull/N/merge`), which already contains
-  every script on the base.
+* **In CI**: the clone has full history, so the merge base is used here too. On a pull request, checkout uses the merge
+  commit (`refs/pull/N/merge`), so the merge base is the base branch's tip. On a push it is normally the commit before
+  the push.
+* **Shallow clones** (other pipelines): `git merge-base` fails and the script compares against the base directly. On a
+  pull request that is still correct, because the merge commit already contains every script on the base.
 
 ### Comparing
 

@@ -59,7 +59,12 @@ if [ -n "${GITHUB_BASE_REF:-}" ]; then
   # The workflow fetches the base branch before this runs, since checkout does not keep credentials for later steps.
   # Fetch it here only when it is missing, such as when this script runs in another pipeline.
   if ! git rev-parse --verify --quiet "${base_ref}^{commit}" >/dev/null; then
-    git fetch --quiet --no-tags --depth=1 origin \
+    # Keep a shallow clone shallow, but never make a full clone shallow: scan.sh needs the full history for gitleaks.
+    depth_args=()
+    if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+      depth_args=(--depth=1)
+    fi
+    git fetch --quiet --no-tags ${depth_args[@]+"${depth_args[@]}"} origin \
       "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
   fi
 fi
@@ -74,7 +79,8 @@ if ! git rev-parse --verify --quiet "${base_ref}^{commit}" >/dev/null; then
   fi
 else
   # Compare against the merge base so that scripts added to the base branch after this branch was cut are not reported
-  # as deleted. On a shallow pull request checkout, HEAD is the merge commit and the base ref is compared directly.
+  # as deleted. In a shallow clone git merge-base fails and the base ref is compared directly. On a pull request that is
+  # still correct, since HEAD is the merge commit.
   compare_ref="$(git merge-base "${base_ref}" HEAD 2>/dev/null || echo "${base_ref}")"
   while IFS=$'\t' read -r status path; do
     [ -z "${status}" ] && continue
