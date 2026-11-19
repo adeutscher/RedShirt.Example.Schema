@@ -54,7 +54,9 @@ Scripts that already exist on the base branch must not be modified, renamed, or 
   (`--depth=1`) into `refs/remotes/origin/<branch>`. The workflow does this in its own step because checkout does not
   keep credentials for later steps. If the branch is still missing, the script fetches it itself.
 * **Locally**: `BASE_REF` if set, otherwise `origin/develop`.
-* **Base not available**: the check prints a skip message and passes. This covers clones without the remote branch.
+* **Base not available**: on CI (`CI=true`, which GitHub Actions sets), the check fails, since a check that could not
+  run must not pass. Elsewhere it prints a warning and skips the immutability check. This covers local clones without
+  the remote branch.
 
 ### Choosing the Commit to Compare
 

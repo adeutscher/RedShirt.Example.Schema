@@ -7,7 +7,8 @@
 # * Scripts that already exist on the base branch are never modified, renamed, or deleted. Only additions are allowed.
 #
 # The base branch is origin/${GITHUB_BASE_REF} on pull requests (fetched by the workflow, or here if missing), otherwise
-# BASE_REF (default origin/develop). The immutability check is skipped when the base ref is not available.
+# BASE_REF (default origin/develop). When the base ref is not available, the immutability check fails on CI (CI=true)
+# and is skipped with a warning elsewhere.
 #
 # Scripts/0000/ holds the template's disposable example script, which is edited in place while this repository is a
 # template. It is exempt from both checks. Remove the exemption once the template has been initialised.
@@ -59,7 +60,13 @@ if [ -n "${GITHUB_BASE_REF:-}" ]; then
 fi
 
 if ! git rev-parse --verify --quiet "${base_ref}^{commit}" >/dev/null; then
-  echo "==> ${base_ref} not available, skipping"
+  # On CI a missing base ref means the check could not run, so fail rather than pass without checking anything.
+  if [ "${CI:-}" = "true" ]; then
+    echo "ERROR: ${base_ref} not available, so applied update scripts cannot be checked." >&2
+    failed=1
+  else
+    echo "WARNING: ${base_ref} not available, skipping (set BASE_REF to compare against another ref)." >&2
+  fi
 else
   # Compare against the merge base so that scripts added to the base branch after this branch was cut are not reported
   # as deleted. On a shallow pull request checkout, HEAD is the merge commit and the base ref is compared directly.
