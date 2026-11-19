@@ -41,6 +41,10 @@ rename_project() {
 
   local nameNew
   nameNew="${NAMESPACE_NEW}${name#"${NAMESPACE_OLD}"}"
+  # Nothing to move when only the label changes. mv would fail with "are the same file".
+  if [ "${nameNew}" = "${name}" ]; then
+    return 0
+  fi
   local csprojNew
   csprojNew="${1}/${nameNew}.csproj"
 
