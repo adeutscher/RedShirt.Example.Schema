@@ -9,6 +9,12 @@ public class SchemaUpgradeTests
     private const string Username = "test";
     private const string Password = "test";
 
+    /// <summary>
+    ///     The migration user's privileges from the README (Database Users). Keep in step with the GRANT there and with
+    ///     MIGRATION_PRIVILEGES in scripts/lib/disposable-db.sh.
+    /// </summary>
+    private const string MigrationPrivileges = "SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES";
+
     private static async Task AssertSchemaAsync(string connectionString)
     {
         await using var connection = new MySqlConnection(connectionString);
@@ -251,6 +257,50 @@ public class SchemaUpgradeTests
         Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
         Assert.Empty(SchemaUpgrader.GetPendingScripts(connectionString, DatabaseName));
         await AssertSchemaAsync(connectionString);
+    }
+
+    /// <summary>
+    ///     Runs every upgrade path (apply, dry run, integrity check, checksum backfill and the lock) as a user with only
+    ///     the documented migration privileges on the one schema, as a deployed database should be set up.
+    /// </summary>
+    [Fact(Timeout = 120_000)]
+    public async Task Upgrade_Succeeds_AsLeastPrivilegeMigrationUser()
+    {
+        const string migrationUser = "example_migrator";
+        const string migrationPassword = "migrator;pw";
+
+        await using var mariaDb = BuildContainer();
+        await mariaDb.StartAsync(TestContext.Current.CancellationToken);
+
+        var rootConnectionString = new MySqlConnectionStringBuilder(mariaDb.GetConnectionString())
+        {
+            UserID = "root"
+        }.ConnectionString;
+        await ExecuteAsync(rootConnectionString,
+            $"""
+             CREATE USER '{migrationUser}'@'%' IDENTIFIED BY '{migrationPassword}' REQUIRE SSL;
+             GRANT {MigrationPrivileges} ON `{DatabaseName}`.* TO '{migrationUser}'@'%';
+             """);
+
+        var connectionString = new MySqlConnectionStringBuilder(mariaDb.GetConnectionString())
+        {
+            UserID = migrationUser,
+            Password = migrationPassword
+        }.ConnectionString;
+
+        Assert.Equal(0, SchemaUpgrader.DryRun(connectionString, DatabaseName));
+        Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
+        await AssertSchemaAsync(connectionString);
+
+        // Drop the checksums so that the second upgrade also backfills them.
+        await ExecuteAsync(connectionString, $"DELETE FROM `{ScriptChecksums.TableName}`");
+        Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
+        await AssertSchemaAsync(connectionString);
+
+        // The grant does not reach other schemas.
+        var denied = await Assert.ThrowsAsync<MySqlException>(() =>
+            ExecuteAsync(connectionString, "CREATE DATABASE `other`"));
+        Assert.Equal(MySqlErrorCode.DatabaseAccessDenied, denied.ErrorCode);
     }
 
     /// <summary>

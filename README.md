@@ -258,9 +258,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON `example`.* TO 'example_app'@'%';
 * The grant above covers tables, indexes and foreign keys. When a script needs more, grant it on the same schema:
   `CREATE VIEW` and `SHOW VIEW` for views, `CREATE ROUTINE`, `ALTER ROUTINE` and `EXECUTE` for stored routines,
   `TRIGGER` for triggers, and `EVENT` for events. Avoid granting anything `ON *.*`.
-* `scripts/list-tables.sh` and `scripts/suggest-dto.sh` apply the scripts as a user with exactly this grant
-  (`MIGRATION_PRIVILEGES` in `scripts/lib/disposable-db.sh`), so a script that needs more fails there first with a
-  "command denied" error. Keep that list in step with the grant above.
+* `scripts/list-tables.sh`, `scripts/suggest-dto.sh` and the integration tests apply the scripts as a user with exactly
+  this grant (`MIGRATION_PRIVILEGES` in `scripts/lib/disposable-db.sh` and `MigrationPrivileges` in the tests), so a
+  script that needs more fails there first with a "command denied" error. Keep both lists in step with the grant above.
 
 **Application user**:
 
