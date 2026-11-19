@@ -143,6 +143,8 @@ file in two marked blocks:
 * **Disposable database server**: Docker image (`MARIADB_IMAGE`), MariaDB bootstrap environment variables
   (`MARIADB_ROOT_PASSWORD`, `MARIADB_DATABASE`), and readiness via a TCP `mariadb` client on the same Docker
   network (not `mariadb-admin ping` on localhost, which can succeed before remote connections work).
+  The upgrader then runs as a migration user (`REVIEW_MIGRATION_USER`, default `schema_migrator`) that is created
+  with only `MIGRATION_PRIVILEGES` on the review schema, as described in [Database Users](#database-users).
 * **Queries and schema dump**: `mariadb --batch` for `information_schema` queries and `mariadb-dump` with `--no-data`
   (replace with your engine's client and schema export tool when pivoting away from MariaDB/MySQL).
 
@@ -256,6 +258,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON `example`.* TO 'example_app'@'%';
 * The grant above covers tables, indexes and foreign keys. When a script needs more, grant it on the same schema:
   `CREATE VIEW` and `SHOW VIEW` for views, `CREATE ROUTINE`, `ALTER ROUTINE` and `EXECUTE` for stored routines,
   `TRIGGER` for triggers, and `EVENT` for events. Avoid granting anything `ON *.*`.
+* `scripts/list-tables.sh` and `scripts/suggest-dto.sh` apply the scripts as a user with exactly this grant
+  (`MIGRATION_PRIVILEGES` in `scripts/lib/disposable-db.sh`), so a script that needs more fails there first with a
+  "command denied" error. Keep that list in step with the grant above.
 
 **Application user**:
 
