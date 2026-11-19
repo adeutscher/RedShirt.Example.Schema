@@ -7,6 +7,11 @@ on:
     branches:
       - develop
 
+# The job only reads the repository. Without this, GITHUB_TOKEN gets the repository's default permissions, which may
+# include write access.
+permissions:
+  contents: read
+
 jobs:
   build:
     if: github.event_name == 'push' || github.event.pull_request.draft == false
