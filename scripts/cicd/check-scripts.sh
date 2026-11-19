@@ -6,7 +6,7 @@
 #   directory year and month match the file name. Files that are not .sql would silently not be embedded.
 # * Scripts that already exist on the base branch are never modified, renamed, or deleted. Only additions are allowed.
 #
-# The base branch is origin/${GITHUB_BASE_REF} on pull requests (fetched here, since checkout is shallow), otherwise
+# The base branch is origin/${GITHUB_BASE_REF} on pull requests (fetched by the workflow, or here if missing), otherwise
 # BASE_REF (default origin/develop). The immutability check is skipped when the base ref is not available.
 #
 # Scripts/0000/ holds the template's disposable example script, which is edited in place while this repository is a
@@ -50,8 +50,12 @@ echo "==> applied update scripts are unchanged"
 base_ref="${BASE_REF:-origin/develop}"
 if [ -n "${GITHUB_BASE_REF:-}" ]; then
   base_ref="origin/${GITHUB_BASE_REF}"
-  git fetch --quiet --no-tags --depth=1 origin \
-    "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+  # The workflow fetches the base branch before this runs, since checkout does not keep credentials for later steps.
+  # Fetch it here only when it is missing, such as when this script runs in another pipeline.
+  if ! git rev-parse --verify --quiet "${base_ref}^{commit}" >/dev/null; then
+    git fetch --quiet --no-tags --depth=1 origin \
+      "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+  fi
 fi
 
 if ! git rev-parse --verify --quiet "${base_ref}^{commit}" >/dev/null; then
