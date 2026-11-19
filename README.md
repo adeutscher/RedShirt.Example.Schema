@@ -235,6 +235,9 @@ Set the following necessary environment variables in your `~/.bashrc` file:
 * `EXAMPLE_SCHEMA_USER`: Username with which to access the target schema. The user must have access to update the
   schema.
 * `EXAMPLE_SCHEMA_PASSWORD`: User password to access the target schema
+* `EXAMPLE_SCHEMA_PASSWORD_FILE`: Path to a file holding the password, used instead of `EXAMPLE_SCHEMA_PASSWORD` (set
+  only one). One trailing line ending is ignored. This suits mounted secrets, and keeps the password out of the process
+  environment.
 
 The following optional variables control TLS:
 
@@ -289,6 +292,17 @@ Copy `.env.example` to `.env`, set the `EXAMPLE_SCHEMA_*` variables, and run:
 
 If the database listens on your host machine (not inside Docker), set `EXAMPLE_SCHEMA_HOST` to
 `host.docker.internal` in `.env`. The script adds a matching `host.docker.internal` host entry for Linux.
+
+Values in `.env` are passed to the container as environment variables, which anyone who can run `docker inspect` can
+read. To keep the password out of them, leave `EXAMPLE_SCHEMA_PASSWORD` out of `.env` and set `PASSWORD_FILE` to a
+file that holds it:
+
+```bash
+PASSWORD_FILE=~/.config/example-schema/password ./docker-update.sh
+```
+
+The file is mounted read-only into the container and passed as `EXAMPLE_SCHEMA_PASSWORD_FILE`. `local-docker-update.sh`
+does this for `LOCAL_SQL_PASSWORD`.
 
 Set `TESTS_ENABLE=1` when building the image if you want `dotnet test` to run during `docker build` (the default is
 `0` for faster applies).

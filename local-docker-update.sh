@@ -9,15 +9,17 @@ if [ -z "${LOCAL_SQL_PASSWORD:-}" ]; then
   exit 1
 fi
 
-ENV_FILE="$(mktemp)"
-trap 'rm -f "${ENV_FILE}"' EXIT
+work_dir="$(mktemp -d)"
+trap 'rm -rf "${work_dir:?}"' EXIT
 
-cat >"${ENV_FILE}" <<EOF
+cat >"${work_dir}/env" <<ENV
 EXAMPLE_SCHEMA_HOST=host.docker.internal
 EXAMPLE_SCHEMA_NAME=example
 EXAMPLE_SCHEMA_USER=root
-EXAMPLE_SCHEMA_PASSWORD=${LOCAL_SQL_PASSWORD}
 EXAMPLE_SCHEMA_SSL_MODE=${EXAMPLE_SCHEMA_SSL_MODE:-Required}
-EOF
+ENV
 
-ENV_FILE="${ENV_FILE}" ./docker-update.sh "$@"
+# The password goes in a file that docker-update.sh mounts, so that it is not visible in docker inspect.
+(umask 077 && printf '%s' "${LOCAL_SQL_PASSWORD}" >"${work_dir}/password")
+
+ENV_FILE="${work_dir}/env" PASSWORD_FILE="${work_dir}/password" ./docker-update.sh "$@"
