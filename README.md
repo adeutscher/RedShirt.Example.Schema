@@ -224,6 +224,57 @@ create it.
 The Docker scripts (`docker-update.sh` and `local-docker-update.sh`) accept `--dry-run` as well, or
 `EXAMPLE_SCHEMA_DRY_RUN=1` can be set in `.env`.
 
+### Database Users
+
+Use separate database accounts for setting up the database, applying schema updates, and running the application.
+None of them should be `root` in a deployed database.
+
+| User        | Used by                    | Privileges                |
+| ----------- | -------------------------- | ------------------------- |
+| Admin       | DBA, one-time setup        | Global (existing account) |
+| Migration   | This upgrader, each deploy | DDL and DML on one schema |
+| Application | The application services   | DML on one schema, no DDL |
+
+The upgrader does not create the database, so it never needs global privileges. An admin creates the schema and the
+two users once:
+
+```sql
+CREATE DATABASE `example`;
+
+CREATE USER 'example_migrator'@'%' IDENTIFIED BY 'redacted' REQUIRE SSL;
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES
+  ON `example`.* TO 'example_migrator'@'%';
+
+CREATE USER 'example_app'@'%' IDENTIFIED BY 'redacted' REQUIRE SSL;
+GRANT SELECT, INSERT, UPDATE, DELETE ON `example`.* TO 'example_app'@'%';
+```
+
+**Migration user**:
+
+* Set it as `EXAMPLE_SCHEMA_USER`. It needs DML for the `Patches` and `PatchChecksums` tables and for scripts that move
+  data. `GET_LOCK` (the upgrade lock) needs no privilege.
+* The grant above covers tables, indexes and foreign keys. When a script needs more, grant it on the same schema:
+  `CREATE VIEW` and `SHOW VIEW` for views, `CREATE ROUTINE`, `ALTER ROUTINE` and `EXECUTE` for stored routines,
+  `TRIGGER` for triggers, and `EVENT` for events. Avoid granting anything `ON *.*`.
+
+**Application user**:
+
+* No DDL, so a compromised application cannot change the schema. Add `EXECUTE` if the application calls stored
+  routines.
+* A schema-wide grant also lets the application write to `Patches` and `PatchChecksums`. If a checksum row is deleted,
+  the next upgrade records the script as it is at that point, which weakens the
+  [integrity check](#file-organization-and-maintenance). For a stricter setup, grant the application user privileges
+  per table instead, at the cost of adding a `GRANT` with every new table:
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON `example`.`Customers` TO 'example_app'@'%';
+```
+
+**All users**:
+
+* `REQUIRE SSL` makes the server refuse unencrypted connections for that account, whatever the client's TLS mode.
+* Replace `'%'` with the host or network that connects, for example `'example_migrator'@'10.0.1.%'`, where you can.
+
 ### Deployed Database
 
 #### Setup
@@ -232,8 +283,8 @@ Set the following necessary environment variables for the run:
 
 * `EXAMPLE_SCHEMA_HOST`: Address of your SQL server
 * `EXAMPLE_SCHEMA_NAME`: Name of your schema
-* `EXAMPLE_SCHEMA_USER`: Username with which to access the target schema. The user must have access to update the
-  schema.
+* `EXAMPLE_SCHEMA_USER`: Username with which to access the target schema. Use a migration user as described in
+  [Database Users](#database-users).
 * `EXAMPLE_SCHEMA_PASSWORD`: User password to access the target schema
 * `EXAMPLE_SCHEMA_PASSWORD_FILE`: Path to a file holding the password, used instead of `EXAMPLE_SCHEMA_PASSWORD` (set
   only one). One trailing line ending is ignored. This suits mounted secrets, and keeps the password out of the process
