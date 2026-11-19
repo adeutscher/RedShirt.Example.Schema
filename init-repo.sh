@@ -9,10 +9,12 @@
 #
 # Usage: ./init-repo.sh New.Namespace NEW_LABEL
 
+set -euo pipefail
+
 cd "$(dirname "${0}")" || exit 1
 
-NAMESPACE_NEW="${1}"
-LABEL_NEW="${2}"
+NAMESPACE_NEW="${1:-}"
+LABEL_NEW="${2:-}"
 
 usage() {
   echo "Usage: $(basename "${0}") <new-namespace> <new-label>" >&2
@@ -157,7 +159,7 @@ while read -r f; do
     -e "s/_SCHEMA_NAME=${SCHEMA_NAME_OLD_ESCAPED}\\b/_SCHEMA_NAME=${SCHEMA_NAME_NEW}/g" \
     -e "s/_SCHEMA_NAME\`: \`${SCHEMA_NAME_OLD_ESCAPED}\`/_SCHEMA_NAME\`: \`${SCHEMA_NAME_NEW}\`/g" \
     -e "s/DatabaseName = \"${SCHEMA_NAME_OLD_ESCAPED}\"/DatabaseName = \"${SCHEMA_NAME_NEW}\"/g" \
-    "${SEED_RENAME_EXPRESSIONS[@]}" \
+    ${SEED_RENAME_EXPRESSIONS[@]+"${SEED_RENAME_EXPRESSIONS[@]}"} \
     "${f}"
 done <<< "$(find . "${PRUNE[@]}" -type f \( \
   -name '*.cs' -o \
