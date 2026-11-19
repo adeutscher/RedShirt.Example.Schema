@@ -228,7 +228,7 @@ The Docker scripts (`docker-update.sh` and `local-docker-update.sh`) accept `--d
 
 #### Setup
 
-Set the following necessary environment variables in your `~/.bashrc` file:
+Set the following necessary environment variables for the run:
 
 * `EXAMPLE_SCHEMA_HOST`: Address of your SQL server
 * `EXAMPLE_SCHEMA_NAME`: Name of your schema
@@ -259,27 +259,38 @@ their own certificate. Use `VerifyFull` for deployed databases wherever a CA cer
 or `None` only for a local server that has no TLS set up. MariaDB 11.4 and later turn on TLS by default with a
 generated certificate, so `Required` works with them without extra setup.
 
-Example:
+Do not export these from `~/.bashrc` or another shell profile. Every program started from that shell inherits the
+password, and profiles tend to end up in backups and dotfile repositories. Keep them in a file outside the repository
+that only you can read, and load it only for the run. For example, `~/.config/example-schema/production.env`:
 
 ```bash
-export EXAMPLE_SCHEMA_HOST="127.0.0.1"
-export EXAMPLE_SCHEMA_NAME="example"
-export EXAMPLE_SCHEMA_USER="db-user"
-export EXAMPLE_SCHEMA_PASSWORD="redacted"
+EXAMPLE_SCHEMA_HOST=db.example.com
+EXAMPLE_SCHEMA_NAME=example
+EXAMPLE_SCHEMA_USER=db-user
+EXAMPLE_SCHEMA_PASSWORD_FILE="${HOME}/.config/example-schema/production.password"
+EXAMPLE_SCHEMA_SSL_MODE=VerifyFull
 ```
 
-Reload your `~/.bashrc` file:
+Create the directory and files so that only you can read them:
 
 ```bash
-. ~/.bashrc
+install -d -m 700 ~/.config/example-schema
 ```
+
+```bash
+(umask 077 && touch ~/.config/example-schema/production.env ~/.config/example-schema/production.password)
+```
+
+Using `EXAMPLE_SCHEMA_PASSWORD_FILE` instead of `EXAMPLE_SCHEMA_PASSWORD` keeps the password out of the environment as
+well. In CI or an orchestrator, use its secret store to provide these values or the mounted password file instead.
 
 #### Application
 
-To deploy updates, use the `update.sh` shorthand script:
+To deploy updates, use the `update.sh` shorthand script. Load the settings in a subshell so that they do not stay in
+your shell afterwards:
 
 ```bash
-./update.sh
+(set -a && . ~/.config/example-schema/production.env && set +a && ./update.sh)
 ```
 
 #### Docker
@@ -311,8 +322,9 @@ Set `TESTS_ENABLE=1` when building the image if you want `dotnet test` to run du
 
 #### Setup
 
-Ensure that the `LOCAL_SQL_PASSWORD` environment variable is set in your environment (for example in `~/.bashrc`). This
-is the password for the local SQL server. The `local-update.sh` script maps it to `EXAMPLE_SCHEMA_PASSWORD` and supplies
+Ensure that the `LOCAL_SQL_PASSWORD` environment variable is set when running the local scripts. This is the password
+for the local SQL server. Use it only for a local development server with a throwaway password, never for a shared or
+deployed one. The `local-update.sh` script maps it to `EXAMPLE_SCHEMA_PASSWORD` and supplies
 local connection defaults:
 
 * `EXAMPLE_SCHEMA_HOST`: `127.0.0.1`
@@ -322,16 +334,10 @@ local connection defaults:
 TLS defaults to `Required`, as for a deployed database. If your local server has no TLS set up, set
 `EXAMPLE_SCHEMA_SSL_MODE=Preferred` (or `None`) in your environment before running the local scripts.
 
-Example:
+Example, reading it from a file that only you can read:
 
 ```bash
-export LOCAL_SQL_PASSWORD="redacted"
-```
-
-Reload your `~/.bashrc` file if you added the variable there:
-
-```bash
-. ~/.bashrc
+LOCAL_SQL_PASSWORD="$(cat ~/.config/example-schema/local.password)" ./local-update.sh
 ```
 
 #### Application
