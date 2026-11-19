@@ -33,6 +33,9 @@ CHECKSUM_TABLE_NAME="${CHECKSUM_TABLE_NAME:-PatchChecksums}"
 MARIADB_IMAGE="${MARIADB_IMAGE:-mariadb:12.3.2}"
 MARIADB_ROOT_PASSWORD="${MARIADB_ROOT_PASSWORD:-${REVIEW_SCHEMA_PASSWORD}}"
 
+# Passwords are handed to docker as bare "-e NAME" options with the value in docker's own environment, so they never
+# appear on a command line (visible to other users through ps and /proc). The mariadb clients read MYSQL_PWD.
+
 NETWORK_NAME="schema-review-$$"
 DB_CONTAINER="schema-review-db-$$"
 
@@ -46,10 +49,10 @@ disposable_db_start() {
 
   docker network create "${NETWORK_NAME}" >/dev/null
 
-  docker run -d \
+  MARIADB_ROOT_PASSWORD="${MARIADB_ROOT_PASSWORD}" docker run -d \
     --name "${DB_CONTAINER}" \
     --network "${NETWORK_NAME}" \
-    -e "MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD}" \
+    -e MARIADB_ROOT_PASSWORD \
     -e "MARIADB_DATABASE=${REVIEW_SCHEMA_NAME}" \
     "${MARIADB_IMAGE}" >/dev/null
 
@@ -64,13 +67,13 @@ disposable_db_start() {
   # DB container can succeed before remote TCP connections are accepted.
   notice "Waiting for MariaDB (${MARIADB_IMAGE}) on ${DB_CONTAINER}..."
   local deadline=$((SECONDS + 120))
-  until docker run --rm \
+  until MYSQL_PWD="${MARIADB_ROOT_PASSWORD}" docker run --rm \
     --network "${NETWORK_NAME}" \
+    -e MYSQL_PWD \
     "${MARIADB_IMAGE}" \
     mariadb \
     -h "${DB_CONTAINER}" \
     -u "${REVIEW_SCHEMA_USER}" \
-    "-p${MARIADB_ROOT_PASSWORD}" \
     -e "SELECT 1" \
     >/dev/null 2>&1
   do
@@ -82,12 +85,12 @@ disposable_db_start() {
   done
 
   notice "Applying schema updates..."
-  if ! docker run --rm \
+  if ! EXAMPLE_SCHEMA_PASSWORD="${MARIADB_ROOT_PASSWORD}" docker run --rm \
     --network "${NETWORK_NAME}" \
     -e "EXAMPLE_SCHEMA_HOST=${DB_CONTAINER}" \
     -e "EXAMPLE_SCHEMA_NAME=${REVIEW_SCHEMA_NAME}" \
     -e "EXAMPLE_SCHEMA_USER=${REVIEW_SCHEMA_USER}" \
-    -e "EXAMPLE_SCHEMA_PASSWORD=${MARIADB_ROOT_PASSWORD}" \
+    -e EXAMPLE_SCHEMA_PASSWORD \
     "${DOCKER_IMAGE}" >&2
   then
     error "Schema upgrade failed"
@@ -101,11 +104,10 @@ disposable_db_start() {
 
 # Runs a query against the review schema and prints rows as tab-separated values with no header.
 db_query() {
-  docker exec "${DB_CONTAINER}" mariadb \
+  MYSQL_PWD="${MARIADB_ROOT_PASSWORD}" docker exec -e MYSQL_PWD "${DB_CONTAINER}" mariadb \
     --batch \
     --skip-column-names \
     -u "${REVIEW_SCHEMA_USER}" \
-    "-p${MARIADB_ROOT_PASSWORD}" \
     "${REVIEW_SCHEMA_NAME}" \
     -e "${1}"
 }
@@ -116,12 +118,11 @@ db_quote() {
 }
 
 db_dump_schema() {
-  docker exec "${DB_CONTAINER}" mariadb-dump \
+  MYSQL_PWD="${MARIADB_ROOT_PASSWORD}" docker exec -e MYSQL_PWD "${DB_CONTAINER}" mariadb-dump \
     --no-data \
     --skip-add-drop-table \
     --routines \
     --skip-comments \
     -u "${REVIEW_SCHEMA_USER}" \
-    "-p${MARIADB_ROOT_PASSWORD}" \
     "${REVIEW_SCHEMA_NAME}"
 }
