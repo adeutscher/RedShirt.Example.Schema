@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd "$(readlink -f "$(dirname "${0}")")"
+script_dir="$(readlink -f "$(dirname "${0}")")" && cd "${script_dir}" || exit 1
 
 ENV_FILE="${ENV_FILE:-.env}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-example-schema:local}"

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd "$(readlink -f "$(dirname "${0}")")"
+script_dir="$(readlink -f "$(dirname "${0}")")" && cd "${script_dir}" || exit 1
 
 if [ -z "${LOCAL_SQL_PASSWORD}" ]; then
   echo "LOCAL_SQL_PASSWORD is unset" >&2
