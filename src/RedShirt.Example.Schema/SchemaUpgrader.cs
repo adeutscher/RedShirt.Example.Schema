@@ -187,8 +187,98 @@ internal static class SchemaUpgrader
         return 0;
     }
 
-    public static int Upgrade(string connectionString, string databaseName, Func<string, bool>? scriptFilter = null)
+    /// <summary>How long an upgrade waits for another upgrade of the same database to finish.</summary>
+    public static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    ///     Name of the server-wide lock that keeps two upgrades of the same database from running at once. MariaDB/MySQL
+    ///     lock names are at most 64 characters, so long database names are replaced by a hash.
+    /// </summary>
+    internal static string LockName(string databaseName)
     {
+        var name = $"schema-upgrade:{databaseName}";
+        return name.Length <= 64
+            ? name
+            : $"schema-upgrade:{ScriptChecksums.Compute(databaseName)[..40]}";
+    }
+
+    /// <summary>
+    ///     Holds the upgrade lock on its own connection. Disposing releases the lock explicitly, since a pooled connection
+    ///     goes back to the pool rather than ending its session. If the process dies, the server releases the lock when
+    ///     the session ends.
+    /// </summary>
+    private sealed class UpgradeLock(MySqlConnection connection, string name) : IDisposable
+    {
+        public void Dispose()
+        {
+            try
+            {
+                using var command = new MySqlCommand("SELECT RELEASE_LOCK(@name)", connection);
+                command.Parameters.AddWithValue("@name", name);
+                command.ExecuteScalar();
+            }
+            finally
+            {
+                connection.Dispose();
+            }
+        }
+    }
+
+    /// <summary>Takes the upgrade lock. Returns null if the lock could not be taken in time.</summary>
+    private static UpgradeLock? AcquireUpgradeLock(string connectionString, string databaseName, TimeSpan timeout)
+    {
+        var connection = new MySqlConnection(connectionString);
+        try
+        {
+            connection.Open();
+
+            if (TryGetLock(connection, databaseName, TimeSpan.Zero))
+            {
+                return new UpgradeLock(connection, LockName(databaseName));
+            }
+
+            Console.WriteLine($"Another upgrade of {databaseName} is running. Waiting up to {timeout} for it to finish...");
+            if (TryGetLock(connection, databaseName, timeout))
+            {
+                return new UpgradeLock(connection, LockName(databaseName));
+            }
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
+        }
+
+        connection.Dispose();
+        return null;
+    }
+
+    private static bool TryGetLock(MySqlConnection connection, string databaseName, TimeSpan timeout)
+    {
+        using var command = new MySqlCommand("SELECT GET_LOCK(@name, @timeout)", connection);
+        command.Parameters.AddWithValue("@name", LockName(databaseName));
+        command.Parameters.AddWithValue("@timeout", (int)Math.Ceiling(timeout.TotalSeconds));
+        // GET_LOCK waits on the server, so the command must not time out first.
+        command.CommandTimeout = 0;
+        // 1 when taken, 0 on timeout, NULL on error.
+        return command.ExecuteScalar() is { } result and not DBNull && Convert.ToInt32(result) == 1;
+    }
+
+    public static int Upgrade(string connectionString, string databaseName, Func<string, bool>? scriptFilter = null,
+        TimeSpan? lockTimeout = null)
+    {
+        // Two upgrades running at once would both see the same pending scripts and both run them. DbUp's MySQL support
+        // takes no lock, so hold a named server lock for the whole check and upgrade.
+        var timeout = lockTimeout ?? DefaultLockTimeout;
+        using var upgradeLock = AcquireUpgradeLock(connectionString, databaseName, timeout);
+        if (upgradeLock is null)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"Another upgrade of {databaseName} did not finish within {timeout}. Nothing was applied.");
+            Console.ResetColor();
+            return -1;
+        }
+
         var upgrader = BuildEngine(connectionString, databaseName, scriptFilter);
 
         var integrity = CheckIntegrity(upgrader, connectionString, databaseName);

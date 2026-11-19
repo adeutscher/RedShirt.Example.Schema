@@ -130,6 +130,65 @@ public class SchemaUpgradeTests
         await AssertSchemaAsync(connectionString);
     }
 
+    private static async Task<long> ScalarAsync(string connectionString, string sql)
+    {
+        await using var connection = new MySqlConnection(connectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = new MySqlCommand(sql, connection);
+        command.Parameters.AddWithValue("@name", SchemaUpgrader.LockName(DatabaseName));
+        return Convert.ToInt64(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact(Timeout = 120_000)]
+    public async Task Upgrade_WaitsForLock_AndGivesUpWithoutApplying()
+    {
+        await using var mariaDb = BuildContainer();
+        await mariaDb.StartAsync(TestContext.Current.CancellationToken);
+        var connectionString = mariaDb.GetConnectionString();
+
+        // Stands in for another upgrade that is still running.
+        await using var other = new MySqlConnection(connectionString);
+        await other.OpenAsync(TestContext.Current.CancellationToken);
+        await using (var take = new MySqlCommand("SELECT GET_LOCK(@name, 0)", other))
+        {
+            take.Parameters.AddWithValue("@name", SchemaUpgrader.LockName(DatabaseName));
+            Assert.Equal(1L, Convert.ToInt64(await take.ExecuteScalarAsync(TestContext.Current.CancellationToken)));
+        }
+
+        Assert.Equal(-1, SchemaUpgrader.Upgrade(connectionString, DatabaseName, lockTimeout: TimeSpan.FromSeconds(1)));
+        Assert.False(await JournalExistsAsync(connectionString));
+
+        await other.CloseAsync();
+        Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
+        Assert.Equal(1L, await ScalarAsync(connectionString, "SELECT IS_FREE_LOCK(@name)"));
+    }
+
+    [Fact(Timeout = 120_000)]
+    public async Task Upgrade_RunAtTheSameTime_AppliesEachScriptOnce()
+    {
+        await using var mariaDb = BuildContainer();
+        await mariaDb.StartAsync(TestContext.Current.CancellationToken);
+        var connectionString = mariaDb.GetConnectionString();
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 4)
+            .Select(_ => Task.Run(() => SchemaUpgrader.Upgrade(connectionString, DatabaseName))));
+
+        Assert.All(results, result => Assert.Equal(0, result));
+        Assert.Equal(
+            await ScalarAsync(connectionString,
+                $"SELECT COUNT(DISTINCT `ScriptName`) FROM `{SchemaUpgrader.JournalTableName}`"),
+            await ScalarAsync(connectionString, $"SELECT COUNT(*) FROM `{SchemaUpgrader.JournalTableName}`"));
+        await AssertSchemaAsync(connectionString);
+    }
+
+    [Fact]
+    public void LockName_FitsServerLimit()
+    {
+        Assert.Equal("schema-upgrade:example", SchemaUpgrader.LockName("example"));
+        Assert.True(SchemaUpgrader.LockName(new string('x', 64)).Length <= 64);
+        Assert.NotEqual(SchemaUpgrader.LockName(new string('x', 64)), SchemaUpgrader.LockName(new string('y', 64)));
+    }
+
     [Fact]
     public void Checksum_IgnoresLineEndingsAndByteOrderMark()
     {

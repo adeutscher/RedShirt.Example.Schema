@@ -93,6 +93,11 @@ the database if one was edited, or if a journaled script is no longer embedded (
 line endings, so a Windows checkout matches a Linux one. Scripts applied before checksums were kept have their
 checksums recorded by the next upgrade, and are trusted as they are at that point.
 
+Only one upgrade of a database runs at a time. An upgrade takes a server-wide named lock (`GET_LOCK`) before checking
+or applying anything, so upgrades started together, such as from several deployment replicas, run one after another.
+An upgrade waits up to five minutes for another to finish, then stops without applying anything. If an upgrade process
+dies, the server releases its lock when the connection closes. Dry runs do not take the lock.
+
 Each script runs in its own transaction, so a failed script is not journaled and is retried on the next run. MariaDB
 commits DDL statements implicitly, though, so see
 [Transactions and DDL](docs/mariadb-table-reminders.md#transactions-and-ddl) before writing scripts that mix several
