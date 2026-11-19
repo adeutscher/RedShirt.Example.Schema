@@ -8,7 +8,7 @@ internal static class ConnectionStringFactory
     ///     Used when no TLS mode is configured. The connection fails rather than falling back to plaintext, but the server
     ///     certificate is not validated. Use VerifyCA or VerifyFull wherever a trusted CA certificate is available.
     /// </summary>
-    public const MySqlSslMode DefaultSslMode = MySqlSslMode.Required;
+    private const MySqlSslMode DefaultSslMode = MySqlSslMode.Required;
 
     /// <summary>
     ///     Builds a connection string with <see cref="MySqlConnectionStringBuilder" />, so that values containing

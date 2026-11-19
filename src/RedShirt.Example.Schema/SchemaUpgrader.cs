@@ -14,12 +14,15 @@ internal static class SchemaUpgrader
     ///     its DML is rolled back. Note that MariaDB/MySQL commit DDL statements implicitly, so a failed script may still
     ///     leave behind DDL that ran before the failing statement.
     /// </summary>
+    /// <param name="databaseName"></param>
     /// <param name="scriptFilter">Optional filter on embedded script names. Defaults to all embedded scripts.</param>
+    /// <param name="connectionString"></param>
     private static UpgradeEngine BuildEngine(string connectionString, string databaseName,
         Func<string, bool>? scriptFilter = null)
     {
         return DeployChanges.To
             .MySqlDatabase(connectionString)
+            // Define a custom journal
             .JournalTo((connectionManager, log) => new ChecksumJournal(
                 new MySqlTableJournal(connectionManager, log, databaseName, JournalTableName), databaseName))
             .WithScriptsEmbeddedInAssembly(typeof(SchemaUpgrader).Assembly, scriptFilter ?? (_ => true))
