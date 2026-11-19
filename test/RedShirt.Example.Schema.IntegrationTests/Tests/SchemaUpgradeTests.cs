@@ -54,6 +54,88 @@ public class SchemaUpgradeTests
                 Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
             Assert.True(journalRowCount >= 1);
         }
+
+        // Every journaled script has a checksum.
+        await using (var command = new MySqlCommand(
+                         $"""
+                          SELECT COUNT(*) FROM `{SchemaUpgrader.JournalTableName}` p
+                          LEFT JOIN `{ScriptChecksums.TableName}` c ON c.ScriptName = p.ScriptName
+                          WHERE c.ScriptName IS NULL
+                          """,
+                         connection))
+        {
+            var missing = Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(0, missing);
+        }
+    }
+
+    private static async Task ExecuteAsync(string connectionString, string sql)
+    {
+        await using var connection = new MySqlConnection(connectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = new MySqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact(Timeout = 120_000)]
+    public async Task Upgrade_Refuses_WhenAppliedScriptChecksumDiffers()
+    {
+        await using var mariaDb = BuildContainer();
+        await mariaDb.StartAsync(TestContext.Current.CancellationToken);
+        var connectionString = mariaDb.GetConnectionString();
+
+        Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
+
+        // Stands in for an applied script that was edited afterwards.
+        await ExecuteAsync(connectionString,
+            $"UPDATE `{ScriptChecksums.TableName}` SET `Sha256` = REPEAT('0', 64)");
+
+        Assert.Equal(-1, SchemaUpgrader.DryRun(connectionString, DatabaseName));
+        Assert.Equal(-1, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
+    }
+
+    [Fact(Timeout = 120_000)]
+    public async Task Upgrade_Refuses_WhenAppliedScriptIsMissing()
+    {
+        await using var mariaDb = BuildContainer();
+        await mariaDb.StartAsync(TestContext.Current.CancellationToken);
+        var connectionString = mariaDb.GetConnectionString();
+
+        Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
+
+        // Stands in for an applied script that was renamed or deleted.
+        await ExecuteAsync(connectionString,
+            $"INSERT INTO `{SchemaUpgrader.JournalTableName}` (`ScriptName`, `Applied`) VALUES ('Removed.sql', NOW())");
+
+        Assert.Equal(-1, SchemaUpgrader.DryRun(connectionString, DatabaseName));
+        Assert.Equal(-1, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
+    }
+
+    /// <summary>
+    ///     Databases upgraded before checksums were kept have journal entries without checksums. The next upgrade
+    ///     records them.
+    /// </summary>
+    [Fact(Timeout = 120_000)]
+    public async Task Upgrade_RecordsMissingChecksums_ForPreviouslyAppliedScripts()
+    {
+        await using var mariaDb = BuildContainer();
+        await mariaDb.StartAsync(TestContext.Current.CancellationToken);
+        var connectionString = mariaDb.GetConnectionString();
+
+        Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
+        await ExecuteAsync(connectionString, $"DROP TABLE `{ScriptChecksums.TableName}`");
+
+        Assert.Equal(0, SchemaUpgrader.DryRun(connectionString, DatabaseName));
+        Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
+        await AssertSchemaAsync(connectionString);
+    }
+
+    [Fact]
+    public void Checksum_IgnoresLineEndingsAndByteOrderMark()
+    {
+        Assert.Equal(ScriptChecksums.Compute("CREATE TABLE `A`;\nSELECT 1;\n"),
+            ScriptChecksums.Compute("﻿CREATE TABLE `A`;\r\nSELECT 1;\r\n"));
+        Assert.NotEqual(ScriptChecksums.Compute("SELECT 1;"), ScriptChecksums.Compute("SELECT 2;"));
     }
 
     private static async Task<bool> JournalExistsAsync(string connectionString)

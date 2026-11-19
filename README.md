@@ -86,6 +86,13 @@ Both rules are enforced by `scripts/cicd/check-scripts.sh`, which runs as part o
 
 See [Update Script Lint](docs/update-script-lint.md) for how the checks work and what they do not catch.
 
+The upgrader also checks this at runtime. DbUp journals scripts by name only, so the upgrader stores a SHA-256 checksum
+of each applied script in a `PatchChecksums` table, written in the same transaction as the journal entry. Before
+applying anything, an upgrade or dry run compares every applied script with its checksum and stops without changing
+the database if one was edited, or if a journaled script is no longer embedded (renamed or deleted). Checksums ignore
+line endings, so a Windows checkout matches a Linux one. Scripts applied before checksums were kept have their
+checksums recorded by the next upgrade, and are trusted as they are at that point.
+
 Each script runs in its own transaction, so a failed script is not journaled and is retried on the next run. MariaDB
 commits DDL statements implicitly, though, so see
 [Transactions and DDL](docs/mariadb-table-reminders.md#transactions-and-ddl) before writing scripts that mix several
@@ -141,7 +148,8 @@ scripts.
 ### Applied table listing
 
 `scripts/list-tables.sh` applies all embedded update scripts to the same kind of disposable database, then prints the
-table names in the applied schema, one per line. The DbUp journal table (`Patches`) is left out unless `--all` is given.
+table names in the applied schema, one per line. The DbUp journal table (`Patches`) and the script checksum table
+(`PatchChecksums`) are left out unless `--all` is given.
 
 ```bash
 ./scripts/list-tables.sh
