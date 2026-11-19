@@ -10,8 +10,10 @@ The script runs two independent checks. It reports every problem it finds, then 
 
 * The scripts directory is `src/RedShirt.Example.Schema/Scripts`. `init-repo.sh` rewrites the namespace in `*.sh`
   files, so the path follows a namespace change.
-* `Scripts/0000/` is exempt from both checks. It holds the template's disposable example script, which is edited in
-  place while this repository is a template. Remove the exemption once the template has been initialized.
+* `Scripts/0000/` holds the template's seed script. It is always exempt from the name check. It is exempt from the
+  immutability check only while `template_mode=1` in `check-scripts.sh`, so that it can be edited in place while this
+  repository is a template. The first run of `init-repo.sh` sets `template_mode=0`, after which the seed script is
+  checked like any other applied script.
 * `legacy_names` in `check-scripts.sh` lists exact paths that are exempt from the name check only. It is for scripts
   that were applied before the naming rule existed, since renaming an applied script makes DbUp run it again. The
   immutability check still covers them. Never add new scripts to the list.

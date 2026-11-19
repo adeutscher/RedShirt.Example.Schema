@@ -47,9 +47,11 @@ When initializing this template:
    username "root" is hard-coded in, which may need changing if your chosen database technology does not use root (e.g.
    SQL Server prefers "sa").
 
-4. `scripts/cicd/check-scripts.sh` exempts `Scripts/0000/` from its naming and immutability checks so that the example
-   script can be edited while this repository is a template. Once you have initialized this template and the example
-   script has been applied anywhere that matters, remove that exemption.
+4. `scripts/cicd/check-scripts.sh` exempts `Scripts/0000/` from its naming check, and from its immutability check
+   while `template_mode=1`, so that the example script can be edited while this repository is a template. The first
+   run of `init-repo.sh` sets `template_mode=0`, after which the seed script is treated as applied and must not be
+   edited. Later runs of `init-repo.sh` leave the seed script's name alone for the same reason. If you need to change
+   the seed script before it has been applied anywhere, set `template_mode=1` again for that change.
 
 5. Once you have initialized this template, you will want to remove this [Template](#template) section from this README.
 

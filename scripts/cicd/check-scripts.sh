@@ -11,8 +11,8 @@
 # push, so that pushes made directly to a branch are checked too. When the base ref is not available, the immutability check fails on CI (CI=true)
 # and is skipped with a warning elsewhere.
 #
-# Scripts/0000/ holds the template's disposable example script, which is edited in place while this repository is a
-# template. It is exempt from both checks. Remove the exemption once the template has been initialised.
+# Scripts/0000/ holds the template's seed script. It is exempt from the name check, and from the immutability check only
+# while template_mode=1 (see below). init-repo.sh ends template mode.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -22,6 +22,10 @@ scripts_dir="src/RedShirt.Example.Schema/Scripts"
 # Scripts named before the naming rule existed. They are already applied, so renaming them would make DbUp run them
 # again. Each entry is an exact path, exempt from the name check only. The immutability check still covers them.
 legacy_names=()
+# Scripts/0000/ holds the template's seed script, which is named before the naming rule and is always exempt from the
+# name check. While template_mode=1 it is also exempt from the immutability check, so that it can be edited in place.
+# init-repo.sh sets template_mode=0 on its first run. From then on the seed script counts as applied.
+template_mode=1
 template_dir="${scripts_dir}/0000/"
 
 failed=0
@@ -74,7 +78,7 @@ else
   compare_ref="$(git merge-base "${base_ref}" HEAD 2>/dev/null || echo "${base_ref}")"
   while IFS=$'\t' read -r status path; do
     [ -z "${status}" ] && continue
-    [[ "${path}" == "${template_dir}"* ]] && continue
+    [ "${template_mode}" = "1" ] && [[ "${path}" == "${template_dir}"* ]] && continue
     [ "${status}" = "A" ] && continue
     echo "ERROR: ${path}: applied update script changed (status ${status}) relative to ${base_ref}." \
       "Add a new script instead." >&2

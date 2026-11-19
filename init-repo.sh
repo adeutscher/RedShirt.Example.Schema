@@ -121,10 +121,26 @@ if [ "${NAMESPACE_NEW}" != "${NAMESPACE_OLD}" ]; then
   mv "${NAMESPACE_OLD}.slnx" "${NAMESPACE_NEW}.slnx"
 fi
 
-# The template's single seed script is named after the schema. Applied scripts are left alone.
+# check-scripts.sh lets the seed script under Scripts/0000/ be edited only while this repository is still the template
+# (template_mode=1). The first run of this script ends template mode. After that, the seed script counts as applied.
+CHECK_SCRIPTS="scripts/cicd/check-scripts.sh"
+TEMPLATE_MODE="$(sed -n 's/^template_mode=\([01]\)$/\1/p' "${CHECK_SCRIPTS}")"
+if [ -z "${TEMPLATE_MODE}" ]; then
+  echo "Could not find template_mode=0 or template_mode=1 in ${CHECK_SCRIPTS}."
+  exit 1
+fi
+
+# The template's single seed script is named after the schema. It is renamed only on the first run: once the seed
+# script may have been applied, renaming it would make DbUp run it again on existing databases.
 SEED_SCRIPT_DIR="src/${NAMESPACE_NEW}/Scripts/0000/0000-01"
-if [ "${SCHEMA_NAME_NEW}" != "${SCHEMA_NAME_OLD}" ] && [ -f "${SEED_SCRIPT_DIR}/0000-00-00-00-${SCHEMA_NAME_OLD}.sql" ]; then
-  mv "${SEED_SCRIPT_DIR}/0000-00-00-00-${SCHEMA_NAME_OLD}.sql" "${SEED_SCRIPT_DIR}/0000-00-00-00-${SCHEMA_NAME_NEW}.sql"
+SEED_RENAME_EXPRESSIONS=()
+if [ "${TEMPLATE_MODE}" = "1" ]; then
+  if [ "${SCHEMA_NAME_NEW}" != "${SCHEMA_NAME_OLD}" ] && [ -f "${SEED_SCRIPT_DIR}/0000-00-00-00-${SCHEMA_NAME_OLD}.sql" ]; then
+    mv "${SEED_SCRIPT_DIR}/0000-00-00-00-${SCHEMA_NAME_OLD}.sql" "${SEED_SCRIPT_DIR}/0000-00-00-00-${SCHEMA_NAME_NEW}.sql"
+  fi
+  SEED_RENAME_EXPRESSIONS=(-e "s/-${SCHEMA_NAME_OLD_ESCAPED}\\.sql\\b/-${SCHEMA_NAME_NEW}.sql/g")
+elif [ "${SCHEMA_NAME_NEW}" != "${SCHEMA_NAME_OLD}" ]; then
+  echo "Keeping the seed script name, since it may already be applied."
 fi
 
 while read -r f; do
@@ -137,7 +153,7 @@ while read -r f; do
     -e "s/_SCHEMA_NAME=${SCHEMA_NAME_OLD_ESCAPED}\\b/_SCHEMA_NAME=${SCHEMA_NAME_NEW}/g" \
     -e "s/_SCHEMA_NAME\`: \`${SCHEMA_NAME_OLD_ESCAPED}\`/_SCHEMA_NAME\`: \`${SCHEMA_NAME_NEW}\`/g" \
     -e "s/DatabaseName = \"${SCHEMA_NAME_OLD_ESCAPED}\"/DatabaseName = \"${SCHEMA_NAME_NEW}\"/g" \
-    -e "s/-${SCHEMA_NAME_OLD_ESCAPED}\\.sql\\b/-${SCHEMA_NAME_NEW}.sql/g" \
+    "${SEED_RENAME_EXPRESSIONS[@]}" \
     "${f}"
 done <<< "$(find . "${PRUNE[@]}" -type f \( \
   -name '*.cs' -o \
@@ -150,3 +166,8 @@ done <<< "$(find . "${PRUNE[@]}" -type f \( \
   -name '.env.example' -o \
   \( -path './.github/*' -a \( -name '*.yml' -o -name '*.yaml' \) \) \
 \) -print)"
+
+if [ "${TEMPLATE_MODE}" = "1" ]; then
+  sed -i 's/^template_mode=1$/template_mode=0/' "${CHECK_SCRIPTS}"
+  echo "Ended template mode in ${CHECK_SCRIPTS}: the seed script is now covered by the immutability check."
+fi
