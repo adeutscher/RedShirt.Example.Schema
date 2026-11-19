@@ -23,18 +23,31 @@ jobs:
           # Do not leave GITHUB_TOKEN in .git/config, where code from the branch under test could read it.
           persist-credentials: false
 
-      # check-scripts.sh compares against the pull request's base branch. Fetch it here, before any code from the branch
-      # runs, with the token given to this one command only, so that this also works for private repositories.
-      - name: Fetch base branch
-        if: github.event_name == 'pull_request'
+      # check-scripts.sh compares update scripts against a base: the target branch for a pull request, or the commit the
+      # branch pointed at before the push. Fetch it here, before any code from the branch runs, with the token given to
+      # this one command only, so that this also works for private repositories.
+      - name: Fetch base for script checks
         env:
-          BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_REF: ${{ github.base_ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
           TOKEN: ${{ github.token }}
         run: |
           auth="$(printf 'x-access-token:%s' "${TOKEN}" | base64 -w0)"
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" \
-            fetch --quiet --no-tags --depth=1 origin \
-            "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          fetch() {
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}" \
+              fetch --quiet --no-tags --depth=1 origin "$@"
+          }
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            fetch "+refs/heads/${PR_BASE_REF}:refs/remotes/origin/${PR_BASE_REF}"
+          elif [[ "${PUSH_BEFORE}" =~ ^0+$ ]]; then
+            # A newly created branch has no previous commit, so there is nothing to compare against.
+            echo "New branch, no previous commit to compare update scripts against."
+            echo "BASE_REF=HEAD" >> "${GITHUB_ENV}"
+          else
+            fetch "+${PUSH_BEFORE}:refs/ci/push-before"
+            echo "BASE_REF=refs/ci/push-before" >> "${GITHUB_ENV}"
+          fi
 
       - name: Setup .NET
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0

@@ -7,7 +7,8 @@
 # * Scripts that already exist on the base branch are never modified, renamed, or deleted. Only additions are allowed.
 #
 # The base branch is origin/${GITHUB_BASE_REF} on pull requests (fetched by the workflow, or here if missing), otherwise
-# BASE_REF (default origin/develop). When the base ref is not available, the immutability check fails on CI (CI=true)
+# BASE_REF (default origin/develop). On a push, the workflow sets BASE_REF to the commit the branch pointed at before the
+# push, so that pushes made directly to a branch are checked too. When the base ref is not available, the immutability check fails on CI (CI=true)
 # and is skipped with a warning elsewhere.
 #
 # Scripts/0000/ holds the template's disposable example script, which is edited in place while this repository is a

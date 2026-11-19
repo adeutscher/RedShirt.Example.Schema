@@ -50,9 +50,12 @@ Scripts that already exist on the base branch must not be modified, renamed, or 
 ### Choosing the Base
 
 * **Pull request in CI**: GitHub sets `GITHUB_BASE_REF` to the pull request's target branch. `actions/checkout` makes
-  a shallow clone without other branches, so the workflow's "Fetch base branch" step fetches that branch
+  a shallow clone without other branches, so the workflow's "Fetch base for script checks" step fetches that branch
   (`--depth=1`) into `refs/remotes/origin/<branch>`. The workflow does this in its own step because checkout does not
   keep credentials for later steps. If the branch is still missing, the script fetches it itself.
+* **Push in CI**: the same step fetches the commit the branch pointed at before the push (`github.event.before`) into
+  `refs/ci/push-before` and sets `BASE_REF` to it, so commits pushed straight to `develop` are checked as well. A push
+  that creates a branch has no previous commit, so `BASE_REF` is set to `HEAD` and there is nothing to compare.
 * **Locally**: `BASE_REF` if set, otherwise `origin/develop`.
 * **Base not available**: on CI (`CI=true`, which GitHub Actions sets), the check fails, since a check that could not
   run must not pass. Elsewhere it prints a warning and skips the immutability check. This covers local clones without
