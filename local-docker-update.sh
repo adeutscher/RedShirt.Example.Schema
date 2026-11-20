@@ -17,6 +17,7 @@ EXAMPLE_SCHEMA_HOST=host.docker.internal
 EXAMPLE_SCHEMA_NAME=example
 EXAMPLE_SCHEMA_USER=${LOCAL_SQL_USER:-root}
 EXAMPLE_SCHEMA_SSL_MODE=${EXAMPLE_SCHEMA_SSL_MODE:-Required}
+EXAMPLE_SCHEMA_JOURNAL_NAME=${EXAMPLE_SCHEMA_JOURNAL_NAME:-}
 ENV
 
 # The password goes in a file that docker-update.sh mounts, so that it is not visible in docker inspect.
