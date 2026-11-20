@@ -1,5 +1,5 @@
-using System.Data;
 using DbUp.Engine;
+using System.Data;
 
 namespace RedShirt.Example.Schema;
 
@@ -7,7 +7,7 @@ namespace RedShirt.Example.Schema;
 ///     Wraps the DbUp journal so that each script's checksum is stored along with its journal entry, using the same
 ///     command factory and so the same per-script transaction.
 /// </summary>
-internal sealed class ChecksumJournal(IJournal inner, string databaseName) : IJournal
+internal sealed class ChecksumJournal(IJournal inner, string journalSchema) : IJournal
 {
     private bool _checksumTableEnsured;
 
@@ -21,7 +21,7 @@ internal sealed class ChecksumJournal(IJournal inner, string databaseName) : IJo
         inner.StoreExecutedScript(script, dbCommandFactory);
 
         using var command = dbCommandFactory();
-        command.CommandText = ScriptChecksums.InsertSql(databaseName);
+        command.CommandText = ScriptChecksums.InsertSql(journalSchema);
         ScriptChecksums.AddInsertParameters(command, script.Name, ScriptChecksums.Compute(script.Contents));
         command.ExecuteNonQuery();
     }
@@ -38,7 +38,7 @@ internal sealed class ChecksumJournal(IJournal inner, string databaseName) : IJo
         }
 
         using var command = dbCommandFactory();
-        command.CommandText = ScriptChecksums.CreateTableSql(databaseName);
+        command.CommandText = ScriptChecksums.CreateTableSql(journalSchema);
         command.ExecuteNonQuery();
         _checksumTableEnsured = true;
     }

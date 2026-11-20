@@ -9,15 +9,22 @@ if [ -z "${LOCAL_SQL_PASSWORD:-}" ]; then
   exit 1
 fi
 
-ENV_FILE="$(mktemp)"
-trap 'rm -f "${ENV_FILE}"' EXIT
+work_dir="$(mktemp -d)"
+trap 'rm -rf "${work_dir:?}"' EXIT
 
-cat >"${ENV_FILE}" <<EOF
+cat >"${work_dir}/env" <<ENV
 EXAMPLE_SCHEMA_HOST=host.docker.internal
 EXAMPLE_SCHEMA_NAME=example
-EXAMPLE_SCHEMA_USER=root
-EXAMPLE_SCHEMA_PASSWORD=${LOCAL_SQL_PASSWORD}
+EXAMPLE_SCHEMA_USER=${LOCAL_SQL_USER:-root}
 EXAMPLE_SCHEMA_SSL_MODE=${EXAMPLE_SCHEMA_SSL_MODE:-Required}
-EOF
+EXAMPLE_SCHEMA_JOURNAL_SCHEMA_NAME=${EXAMPLE_SCHEMA_JOURNAL_SCHEMA_NAME:-}
+EXAMPLE_SCHEMA_JOURNAL_TABLE_NAME=${EXAMPLE_SCHEMA_JOURNAL_TABLE_NAME:-}
+ENV
 
-ENV_FILE="${ENV_FILE}" ./docker-update.sh "$@"
+# The password goes in a file that docker-update.sh mounts, so that it is not visible in docker inspect.
+(umask 077 && printf '%s' "${LOCAL_SQL_PASSWORD}" >"${work_dir}/password")
+
+# EXAMPLE_SCHEMA_SSL_CA is a host path here, as for local-update.sh. docker-update.sh mounts the file and points the
+# container at its path inside the container.
+ENV_FILE="${work_dir}/env" PASSWORD_FILE="${work_dir}/password" CA_FILE="${EXAMPLE_SCHEMA_SSL_CA:-}" \
+  ./docker-update.sh "$@"

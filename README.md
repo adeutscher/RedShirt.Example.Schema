@@ -7,12 +7,13 @@ Example schema version tracking for a database table using DbUp library.
 This is a template project, which means are a few special considerations:
 
 * An applied application of this template would order its update scripts in accordance with the guideline set out in
-  the [File Organization and Maintenance](#file-organization-and-maintenance) section of this README. However, rather
-  than document the development of the template and apply incremental updates as would be intended for an applied
-  project, this template maintains a single file: `Scripts/0000/0000-01/0000-00-00-00-example.sql`. The data within the
-  template tables while it is acting as a template are assumed to be entirely disposable.
-* The tables declared in this template are in service of the API template
-  at [RedShirt.Example.Api](https://github.com/adeutscher/RedShirt.Example.Api).
+  the [File Organization and Maintenance](#file-organization-and-maintenance) section of this README. However, this
+  template chooses to break its own rules. Rather than document the development of the template and apply incremental
+  updates as would be intended for an applied project, this template maintains a single file:
+  `Scripts/0000/0000-01/0000-00-00-00-example.sql`. The data within the template tables while it is acting as a
+  template are assumed to be entirely disposable.
+    * The tables declared in this template are in service of the API template
+      at [RedShirt.Example.Api](https://github.com/adeutscher/RedShirt.Example.Api).
 
 ### Initialization
 
@@ -44,8 +45,8 @@ When initializing this template:
 3. The `local-update.sh` script was made as a convenience button for local applies to a disposable database running on
    your local machine. If you would rather set up your environment variables in a different way, then you may wish to
    simply delete `local-update.sh` altogether. If you choose to keep `local-update.sh`, then please note that the
-   username "root" is hard-coded in, which may need changing if your chosen database technology does not use root (e.g.
-   SQL Server prefers "sa").
+   username defaults to "root" (overridable with `LOCAL_SQL_USER`), which may need changing if your chosen database
+   technology does not use root (e.g. SQL Server prefers "sa").
 
 4. `scripts/cicd/check-scripts.sh` exempts `Scripts/0000/` from its naming check, and from its immutability check
    while `template_mode=1`, so that the example script can be edited while this repository is a template. The first
@@ -61,8 +62,9 @@ The DbUp library has the following behaviour:
 
 * It shall iterate through the `.sql` files in the `Scripts/` directory of the `RedShirt.Example.Schema` project, which
   represent incremental updates to the schema.
-* It shall consult a journal table (hard-coded as `Patches` in `SchemaUpgrader.cs`) to verify `.sql` files that have
-  already been applied.
+* It shall consult a journal table (`Patches` by default, see `EXAMPLE_SCHEMA_JOURNAL_TABLE_NAME`) to verify `.sql`
+  files that have already been applied. The journal is kept in its own schema, `<name>_changes` by default (see
+  [Journal Schema](#journal-schema)).
 
 In order to ensure that updates are executed in the intended order and to avoid one large directory, the following
 guidelines are strongly advised:
@@ -87,7 +89,8 @@ Both rules are enforced by `scripts/cicd/check-scripts.sh`, which runs as part o
 See [Update Script Lint](docs/update-script-lint.md) for how the checks work and what they do not catch.
 
 The upgrader also checks this at runtime. DbUp journals scripts by name only, so the upgrader stores a SHA-256 checksum
-of each applied script in a `PatchChecksums` table, written in the same transaction as the journal entry. Before
+of each applied script in a `PatchChecksums` table next to the journal, written in the same transaction as the journal
+entry. Before
 applying anything, an upgrade or dry run compares every applied script with its checksum and stops without changing
 the database if one was edited, or if a journaled script is no longer embedded (renamed or deleted). Checksums ignore
 line endings, so a Windows checkout matches a Linux one. Scripts applied before checksums were kept have their
@@ -143,6 +146,11 @@ file in two marked blocks:
 * **Disposable database server**: Docker image (`MARIADB_IMAGE`), MariaDB bootstrap environment variables
   (`MARIADB_ROOT_PASSWORD`, `MARIADB_DATABASE`), and readiness via a TCP `mariadb` client on the same Docker
   network (not `mariadb-admin ping` on localhost, which can succeed before remote connections work).
+  That network is internal and gives the host no address on it, so neither the internet nor other users and processes
+  on the host can reach the disposable database. Only the script's own containers can.
+  The script also creates the journal schema. The upgrader then runs as a migration user (`REVIEW_MIGRATION_USER`,
+  default `schema_migrator`) that is created with only `MIGRATION_PRIVILEGES` on the review schema and
+  `JOURNAL_PRIVILEGES` on the journal schema, as described in [Database Users](#database-users).
 * **Queries and schema dump**: `mariadb --batch` for `information_schema` queries and `mariadb-dump` with `--no-data`
   (replace with your engine's client and schema export tool when pivoting away from MariaDB/MySQL).
 
@@ -154,7 +162,7 @@ scripts.
 
 `scripts/list-tables.sh` applies all embedded update scripts to the same kind of disposable database, then prints the
 table names in the applied schema, one per line. The DbUp journal table (`Patches`) and the script checksum table
-(`PatchChecksums`) are left out unless `--all` is given.
+(`PatchChecksums`) are in the journal schema, so they are left out unless `--all` is given.
 
 ```bash
 ./scripts/list-tables.sh
@@ -204,8 +212,8 @@ timestamp columns, renamed columns, unmapped types) are printed to stderr. Integ
 
 Instructions on how to apply schema updates.
 
-The target database must already exist before running `update.sh` or `local-update.sh`. These scripts apply schema
-patches to an existing database; they do not create the database itself.
+The target database and its journal schema must already exist before running `update.sh` or `local-update.sh`. These
+scripts apply schema patches to an existing database; they do not create either schema.
 
 ### Dry Run
 
@@ -224,27 +232,127 @@ create it.
 The Docker scripts (`docker-update.sh` and `local-docker-update.sh`) accept `--dry-run` as well, or
 `EXAMPLE_SCHEMA_DRY_RUN=1` can be set in `.env`.
 
+### Database Users
+
+Use separate database accounts for setting up the database, applying schema updates, and running the application.
+None of them should be `root` in a deployed database.
+
+| User        | Used by                    | Privileges                                        |
+|-------------|----------------------------|---------------------------------------------------|
+| Admin       | DBA, one-time setup        | Global (existing account)                         |
+| Migration   | This upgrader, each deploy | DDL and DML on the schema, append to its journal  |
+| Application | The application services   | DML on the schema, no DDL, nothing on the journal |
+
+The upgrader does not create either schema, so it never needs global privileges. An admin creates the schema, its
+[journal schema](#journal-schema) and the two users once:
+
+```sql
+CREATE DATABASE `example`;
+CREATE DATABASE `example_changes`;
+
+CREATE USER 'example_migrator'@'%' IDENTIFIED BY 'redacted' REQUIRE SSL;
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES
+  ON `example`.* TO 'example_migrator'@'%';
+GRANT SELECT, INSERT, CREATE ON `example\_changes`.* TO 'example_migrator'@'%';
+
+CREATE USER 'example_app'@'%' IDENTIFIED BY 'redacted' REQUIRE SSL;
+GRANT SELECT, INSERT, UPDATE, DELETE ON `example`.* TO 'example_app'@'%';
+```
+
+**Migration user**:
+
+* Set it as `EXAMPLE_SCHEMA_USER`. It needs DML on the application schema for scripts that move data.
+* On the journal schema it only creates the journal tables and adds rows to them, so it cannot rewrite or delete
+  journal history. `CREATE` and `INSERT` there also let it move journal tables in from the application schema (see
+  [Journal Schema](#journal-schema)). `GET_LOCK` (the upgrade lock) needs no privilege.
+* The grant above covers tables, indexes and foreign keys. When a script needs more, grant it on the same schema:
+  `CREATE VIEW` and `SHOW VIEW` for views, `CREATE ROUTINE`, `ALTER ROUTINE` and `EXECUTE` for stored routines,
+  `TRIGGER` for triggers, and `EVENT` for events. Avoid granting anything `ON *.*`.
+* `scripts/list-tables.sh`, `scripts/suggest-dto.sh` and the integration tests apply the scripts as a user with exactly
+  these grants (`MIGRATION_PRIVILEGES` and `JOURNAL_PRIVILEGES` in `scripts/lib/disposable-db.sh`, and
+  `MigrationPrivileges` and `JournalPrivileges` in the tests), so a script that needs more fails there first with a
+  "command denied" error. `scripts/cicd/lint.sh` checks that those lists match the grants above.
+
+**Application user**:
+
+* No DDL, so a compromised application cannot change the schema. Add `EXECUTE` if the application calls stored
+  routines.
+* The schema-wide grant covers tables added by later scripts, with no grant needed per table.
+* Grant it nothing on the journal schema. A deleted `Patches` row would make a script run again, and a deleted
+  `PatchChecksums` row would let the next upgrade trust an edited script.
+
+**All users**:
+
+* `REQUIRE SSL` makes the server refuse unencrypted connections for that account, whatever the client's TLS mode.
+* Replace `'%'` with the host or network that connects, for example `'example_migrator'@'10.0.1.%'`, where you can.
+* In the database name of a `GRANT ... ON`, `_` and `%` are wildcards. A grant on `` `my_db`.* `` also covers `myXdb`,
+  `my1db` and so on. Escape them with a backslash, `` `my\_db`.* ``, so that the grant covers that schema only.
+  `init-repo.sh` turns a label such as `PROJECT_MALAMUTE` into the schema name `project_malamute`, so this usually
+  applies.
+
+### Journal Schema
+
+The `Patches` journal and `PatchChecksums` tables live in their own schema, `<name>_changes` by default, so that the
+application's user can be granted the whole application schema without being able to change them. Set
+`EXAMPLE_SCHEMA_JOURNAL_SCHEMA_NAME` to use another name. Setting it to the application schema's own name keeps the
+journal there, as before this was added, at the cost of the protection above.
+
+**Journal table name**: Set `EXAMPLE_SCHEMA_JOURNAL_TABLE_NAME` to call the journal table something other than
+`Patches`. The checksum table is always `PatchChecksums`, so the journal table cannot have that name. Choose the name
+before the first upgrade. To rename an existing journal, rename the table by hand with `RENAME TABLE` before the next
+upgrade, while no upgrade is running.
+
+**Missing journal**: If the journal is missing or empty but `PatchChecksums` has rows, in the journal schema, the
+application schema or the default `<name>_changes` schema, the upgrader refuses to run. Checksums are only recorded for
+applied scripts, so this means that the journal is somewhere else, for example because its table name or the journal
+schema setting changed. Without this check, the upgrader would start an empty journal and apply every script again.
+Point the settings back at the existing journal, or, to start over on purpose, delete the `PatchChecksums` rows first.
+
+**Existing databases**: Databases upgraded before this change have the journal tables in the application schema. Once
+an admin has created the journal schema and granted the migration user on it, the next upgrade moves the tables there
+with a single `RENAME TABLE` before doing anything else. A dry run reports the move without making it. The upgrader
+refuses to run, and changes nothing, when:
+
+* the journal schema does not exist, or the migration user has no privileges on it, or
+* both schemas hold journal tables. Work out which journal is right and remove the other one by hand.
+
+Do not create an empty journal in the new schema by hand instead of letting the upgrader move the old one. An empty
+journal means that no script has been applied, and every script would run again.
+
+**Backups**: The journal schema is part of the database's state. Back up and restore the two schemas together, at the
+same point in time. If the application schema is restored from an older backup but the journal is not, the journal
+lists scripts whose changes are no longer there. The upgrader skips them, and the integrity check cannot tell, since
+the scripts themselves are unchanged. A `mariadb-dump` of the application schema alone leaves the journal out, so
+include both, for example with `mariadb-dump --databases example example_changes`.
+
 ### Deployed Database
 
 #### Setup
 
-Set the following necessary environment variables in your `~/.bashrc` file:
+Set the following necessary environment variables for the run:
 
 * `EXAMPLE_SCHEMA_HOST`: Address of your SQL server
 * `EXAMPLE_SCHEMA_NAME`: Name of your schema
-* `EXAMPLE_SCHEMA_USER`: Username with which to access the target schema. The user must have access to update the
-  schema.
+* `EXAMPLE_SCHEMA_JOURNAL_SCHEMA_NAME`: Optional. Schema for the journal and checksum tables. Defaults to
+  `EXAMPLE_SCHEMA_NAME` with `_changes` added. See [Journal Schema](#journal-schema).
+* `EXAMPLE_SCHEMA_JOURNAL_TABLE_NAME`: Optional. Name of the journal table. Defaults to `Patches`. See
+  [Journal Schema](#journal-schema) before changing it on an existing database.
+* `EXAMPLE_SCHEMA_USER`: Username with which to access the target schema. Use a migration user as described in
+  [Database Users](#database-users).
 * `EXAMPLE_SCHEMA_PASSWORD`: User password to access the target schema
+* `EXAMPLE_SCHEMA_PASSWORD_FILE`: Path to a file holding the password, used instead of `EXAMPLE_SCHEMA_PASSWORD` (set
+  only one). One trailing line ending is ignored. This suits mounted secrets, and keeps the password out of the process
+  environment.
 
 The following optional variables control TLS:
 
 * `EXAMPLE_SCHEMA_SSL_MODE`: TLS mode for the connection. Defaults to `Required`. See the table below.
 * `EXAMPLE_SCHEMA_SSL_CA`: Path to a CA certificate file (PEM) used to validate the server certificate with `VerifyCA`
-  or `VerifyFull`. When it is not set, the system trust store is used. With Docker, the file must be mounted into the
-  container and the path must be the path inside the container.
+  or `VerifyFull`. When it is not set, the system trust store is used. With Docker, set `CA_FILE` instead, as
+  described under [Docker](#docker).
 
 | Mode         | Encrypted      | Server certificate checked          |
-| ------------ | -------------- | ----------------------------------- |
+|--------------|----------------|-------------------------------------|
 | `None`       | No             | No                                  |
 | `Preferred`  | When available | No                                  |
 | `Required`   | Yes            | No                                  |
@@ -256,28 +364,47 @@ their own certificate. Use `VerifyFull` for deployed databases wherever a CA cer
 or `None` only for a local server that has no TLS set up. MariaDB 11.4 and later turn on TLS by default with a
 generated certificate, so `Required` works with them without extra setup.
 
-Example:
+The upgrader prints a warning when it connects to a server that is not on this machine without validating the
+certificate: when the TLS mode is left at its default, or set to `Preferred` or `None`. Loopback addresses, `localhost`,
+Unix sockets and `host.docker.internal` count as this machine. To accept an unvalidated certificate on purpose, for
+example for a server whose certificate cannot be verified, set `EXAMPLE_SCHEMA_SSL_MODE=Required` explicitly.
+
+Do not export these from `~/.bashrc` or another shell profile. Every program started from that shell inherits the
+password, and profiles tend to end up in backups and dotfile repositories. Keep them in a file outside the repository
+that only you can read, and load it only for the run. For example, `~/.config/example-schema/production.env`:
 
 ```bash
-export EXAMPLE_SCHEMA_HOST="127.0.0.1"
-export EXAMPLE_SCHEMA_NAME="example"
-export EXAMPLE_SCHEMA_USER="db-user"
-export EXAMPLE_SCHEMA_PASSWORD="redacted"
+EXAMPLE_SCHEMA_HOST=db.example.com
+EXAMPLE_SCHEMA_NAME=example
+EXAMPLE_SCHEMA_USER=db-user
+EXAMPLE_SCHEMA_PASSWORD_FILE="${HOME}/.config/example-schema/production.password"
+EXAMPLE_SCHEMA_SSL_MODE=VerifyFull
 ```
 
-Reload your `~/.bashrc` file:
+Create the directory and files so that only you can read them:
 
 ```bash
-. ~/.bashrc
+install -d -m 700 ~/.config/example-schema
 ```
+
+```bash
+(umask 077 && touch ~/.config/example-schema/production.env ~/.config/example-schema/production.password)
+```
+
+Using `EXAMPLE_SCHEMA_PASSWORD_FILE` instead of `EXAMPLE_SCHEMA_PASSWORD` keeps the password out of the environment as
+well. In CI or an orchestrator, use its secret store to provide these values or the mounted password file instead.
 
 #### Application
 
-To deploy updates, use the `update.sh` shorthand script:
+To deploy updates, use the `update.sh` shorthand script. Load the settings in a subshell so that they do not stay in
+your shell afterwards:
 
 ```bash
-./update.sh
+(set -a && . ~/.config/example-schema/production.env && set +a && ./update.sh)
 ```
+
+> **Warning**: If you source a configuration file like this, make sure that the file has the appropriate permissions
+> so that it is not casually readable by another user.
 
 #### Docker
 
@@ -290,6 +417,28 @@ Copy `.env.example` to `.env`, set the `EXAMPLE_SCHEMA_*` variables, and run:
 If the database listens on your host machine (not inside Docker), set `EXAMPLE_SCHEMA_HOST` to
 `host.docker.internal` in `.env`. The script adds a matching `host.docker.internal` host entry for Linux.
 
+Values in `.env` are passed to the container as environment variables, which anyone who can run `docker inspect` can
+read. To keep the password out of them, leave `EXAMPLE_SCHEMA_PASSWORD` out of `.env` and set `PASSWORD_FILE` to a
+file that holds it:
+
+```bash
+PASSWORD_FILE=~/.config/example-schema/password ./docker-update.sh
+```
+
+The file is mounted read-only into the container and passed as `EXAMPLE_SCHEMA_PASSWORD_FILE`. `local-docker-update.sh`
+does this for `LOCAL_SQL_PASSWORD`.
+
+For `VerifyCA` or `VerifyFull` with a CA that the image does not trust, set `CA_FILE` to the host path of the CA
+certificate:
+
+```bash
+CA_FILE=~/.config/example-schema/ca.pem PASSWORD_FILE=~/.config/example-schema/password ./docker-update.sh
+```
+
+The file is mounted read-only into the container, and `EXAMPLE_SCHEMA_SSL_CA` is set to its path there, overriding any
+value in `.env`. `local-docker-update.sh` does this with `EXAMPLE_SCHEMA_SSL_CA`, which it takes as a host path, as
+`local-update.sh` does.
+
 Set `TESTS_ENABLE=1` when building the image if you want `dotnet test` to run during `docker build` (the default is
 `0` for faster applies).
 
@@ -297,27 +446,43 @@ Set `TESTS_ENABLE=1` when building the image if you want `dotnet test` to run du
 
 #### Setup
 
-Ensure that the `LOCAL_SQL_PASSWORD` environment variable is set in your environment (for example in `~/.bashrc`). This
-is the password for the local SQL server. The `local-update.sh` script maps it to `EXAMPLE_SCHEMA_PASSWORD` and supplies
+Ensure that the `LOCAL_SQL_PASSWORD` environment variable is set when running the local scripts. This is the password
+for the local SQL server. Use it only for a local development server with a throwaway password, never for a shared or
+deployed one. The `local-update.sh` script maps it to `EXAMPLE_SCHEMA_PASSWORD` and supplies
 local connection defaults:
 
 * `EXAMPLE_SCHEMA_HOST`: `127.0.0.1`
 * `EXAMPLE_SCHEMA_NAME`: `example`
-* `EXAMPLE_SCHEMA_USER`: `root`
+* `EXAMPLE_SCHEMA_USER`: `LOCAL_SQL_USER`, or `root` when that is not set
+
+`root` is kept as the default so that a fresh local server works without setup. To catch scripts that need more than
+the migration grant before they reach a deployed database, create a local migration user as described in
+[Database Users](#database-users) and set `LOCAL_SQL_USER` to it.
+
+The upgrader never creates the [journal schema](#journal-schema), so create it once on the local server before the
+first run, for example as `root`:
+
+```sql
+CREATE DATABASE IF NOT EXISTS `example_changes`;
+```
+
+A local migration user set up as in [Database Users](#database-users) is already granted on it. If an earlier run left
+the journal in `example`, the next run moves it there.
+
+Alternatively, set `EXAMPLE_SCHEMA_JOURNAL_SCHEMA_NAME=example` in your environment to keep the journal in the
+application schema, as before the journal schema was added. Both local scripts pass it through. This needs no extra
+schema, but the local layout then differs from a deployed one, so the move and the separate journal grant are not
+exercised locally.
+Do not switch an existing local database back and forth between the two settings. Going from `example_changes` back to
+`example` is not moved for you, and the upgrader refuses to run, as described in [Journal Schema](#journal-schema).
 
 TLS defaults to `Required`, as for a deployed database. If your local server has no TLS set up, set
 `EXAMPLE_SCHEMA_SSL_MODE=Preferred` (or `None`) in your environment before running the local scripts.
 
-Example:
+Example, reading it from a file that only you can read:
 
 ```bash
-export LOCAL_SQL_PASSWORD="redacted"
-```
-
-Reload your `~/.bashrc` file if you added the variable there:
-
-```bash
-. ~/.bashrc
+LOCAL_SQL_PASSWORD="$(cat ~/.config/example-schema/local.password)" ./local-update.sh
 ```
 
 #### Application

@@ -190,7 +190,7 @@ A cascade rule tells the server what to do with child rows when the referenced p
 updated. Rules are set separately for `ON DELETE` and `ON UPDATE`. If a rule is omitted, it defaults to `RESTRICT`.
 
 | Action        | Effect on child rows when the parent row changes          |
-| ------------- | --------------------------------------------------------- |
+|---------------|-----------------------------------------------------------|
 | `CASCADE`     | Child rows are deleted or updated to match the parent.    |
 | `SET NULL`    | Child column is set to NULL. The column must be nullable. |
 | `RESTRICT`    | Parent change is rejected while child rows exist.         |

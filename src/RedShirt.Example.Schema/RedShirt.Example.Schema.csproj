@@ -9,7 +9,7 @@
 
     <ItemGroup>
         <PackageReference Include="dbup-mysql" Version="6.1.0"/>
-        <PackageReference Include="MySqlConnector" Version="3.0.0" />
+        <PackageReference Include="MySqlConnector" Version="3.0.0"/>
     </ItemGroup>
 
     <ItemGroup>

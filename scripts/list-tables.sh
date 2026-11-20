@@ -31,7 +31,7 @@ while [ $# -gt 0 ]; do
     -h | --help)
       echo "Usage: $(basename "${0}") [--all] [-o output.txt]" >&2
       echo "  Writes applied table names to stdout, or to output.txt when -o is set." >&2
-      echo "  --all  Include the DbUp journal and script checksum tables." >&2
+      echo "  --all  Include the DbUp journal and script checksum tables from the journal schema." >&2
       exit 0
       ;;
     *)
@@ -47,12 +47,14 @@ done
 
 disposable_db_start
 
-query="SELECT TABLE_NAME FROM information_schema.TABLES
-  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'"
-if [ "${INCLUDE_JOURNAL}" -eq 0 ]; then
-  query="${query} AND TABLE_NAME NOT IN ('$(db_quote "${JOURNAL_TABLE_NAME}")', '$(db_quote "${CHECKSUM_TABLE_NAME}")')"
+# The journal and checksum tables are in their own schema, so the application schema lists only application tables.
+schemas="DATABASE()"
+if [ "${INCLUDE_JOURNAL}" -eq 1 ]; then
+  schemas="${schemas}, '$(db_quote "${REVIEW_JOURNAL_SCHEMA}")'"
 fi
-query="${query} ORDER BY TABLE_NAME"
+query="SELECT TABLE_NAME FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA IN (${schemas}) AND TABLE_TYPE = 'BASE TABLE'
+  ORDER BY TABLE_NAME"
 
 if [ -n "${OUTPUT_PATH}" ]; then
   db_query "${query}" >"${OUTPUT_PATH}"
