@@ -427,6 +427,22 @@ local connection defaults:
 the migration grant before they reach a deployed database, create a local migration user as described in
 [Database Users](#database-users) and set `LOCAL_SQL_USER` to it.
 
+The upgrader never creates the [journal schema](#journal-schema), so create it once on the local server before the
+first run, for example as `root`:
+
+```sql
+CREATE DATABASE IF NOT EXISTS `example_changes`;
+```
+
+A local migration user set up as in [Database Users](#database-users) is already granted on it. If an earlier run left
+the journal in `example`, the next run moves it there.
+
+Alternatively, set `EXAMPLE_SCHEMA_JOURNAL_NAME=example` in your environment to keep the journal in the application
+schema, as before the journal schema was added. Both local scripts pass it through. This needs no extra schema, but the
+local layout then differs from a deployed one, so the move and the separate journal grant are not exercised locally.
+Do not switch an existing local database back and forth between the two settings. Going from `example_changes` back to
+`example` is not moved for you, and the upgrader would see an empty journal in `example` and apply every script again.
+
 TLS defaults to `Required`, as for a deployed database. If your local server has no TLS set up, set
 `EXAMPLE_SCHEMA_SSL_MODE=Preferred` (or `None`) in your environment before running the local scripts.
 
