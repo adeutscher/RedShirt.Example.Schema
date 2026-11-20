@@ -292,8 +292,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON `example`.* TO 'example_app'@'%';
 
 The `Patches` journal and `PatchChecksums` tables live in their own schema, `<name>_changes` by default, so that the
 application's user can be granted the whole application schema without being able to change them. Set
-`EXAMPLE_SCHEMA_JOURNAL_NAME` to use another name. Setting it to the application schema's own name keeps the journal
-there, as before this was added, at the cost of the protection above.
+`EXAMPLE_SCHEMA_JOURNAL_SCHEMA_NAME` to use another name. Setting it to the application schema's own name keeps the
+journal there, as before this was added, at the cost of the protection above.
 
 **Existing databases**: Databases upgraded before this change have the journal tables in the application schema. Once
 an admin has created the journal schema and granted the migration user on it, the next upgrade moves the tables there
@@ -320,7 +320,7 @@ Set the following necessary environment variables for the run:
 
 * `EXAMPLE_SCHEMA_HOST`: Address of your SQL server
 * `EXAMPLE_SCHEMA_NAME`: Name of your schema
-* `EXAMPLE_SCHEMA_JOURNAL_NAME`: Optional. Schema for the journal and checksum tables. Defaults to
+* `EXAMPLE_SCHEMA_JOURNAL_SCHEMA_NAME`: Optional. Schema for the journal and checksum tables. Defaults to
   `EXAMPLE_SCHEMA_NAME` with `_changes` added. See [Journal Schema](#journal-schema).
 * `EXAMPLE_SCHEMA_USER`: Username with which to access the target schema. Use a migration user as described in
   [Database Users](#database-users).
@@ -438,9 +438,10 @@ CREATE DATABASE IF NOT EXISTS `example_changes`;
 A local migration user set up as in [Database Users](#database-users) is already granted on it. If an earlier run left
 the journal in `example`, the next run moves it there.
 
-Alternatively, set `EXAMPLE_SCHEMA_JOURNAL_NAME=example` in your environment to keep the journal in the application
-schema, as before the journal schema was added. Both local scripts pass it through. This needs no extra schema, but the
-local layout then differs from a deployed one, so the move and the separate journal grant are not exercised locally.
+Alternatively, set `EXAMPLE_SCHEMA_JOURNAL_SCHEMA_NAME=example` in your environment to keep the journal in the
+application schema, as before the journal schema was added. Both local scripts pass it through. This needs no extra
+schema, but the local layout then differs from a deployed one, so the move and the separate journal grant are not
+exercised locally.
 Do not switch an existing local database back and forth between the two settings. Going from `example_changes` back to
 `example` is not moved for you, and the upgrader would see an empty journal in `example` and apply every script again.
 
