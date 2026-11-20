@@ -64,6 +64,41 @@ public class ConnectionStringFactoryTests
         Assert.False(ConnectionStringFactory.TryParseSslMode(value, out _));
     }
 
+    [Theory]
+    [InlineData("db.example", MySqlSslMode.Required, true, "db.example")]
+    [InlineData("10.0.0.5", MySqlSslMode.Required, true, "10.0.0.5")]
+    [InlineData("db.example", MySqlSslMode.Preferred, false, "db.example")]
+    [InlineData("db.example", MySqlSslMode.None, false, "db.example")]
+    [InlineData("localhost,db.example", MySqlSslMode.Required, true, "db.example")]
+    public void UnverifiedTlsWarning_Warns_ForRemoteHosts(string host, MySqlSslMode sslMode, bool isDefault,
+        string remoteHost)
+    {
+        var warning = ConnectionStringFactory.UnverifiedTlsWarning(host, sslMode, isDefault);
+
+        Assert.NotNull(warning);
+        Assert.Contains(remoteHost, warning);
+        Assert.DoesNotContain("localhost", warning);
+    }
+
+    [Theory]
+    [InlineData("db.example", MySqlSslMode.VerifyFull, true)]
+    [InlineData("db.example", MySqlSslMode.VerifyCA, false)]
+    [InlineData("db.example", MySqlSslMode.Required, false)]
+    [InlineData("localhost", MySqlSslMode.Required, true)]
+    [InlineData("LOCALHOST", MySqlSslMode.None, false)]
+    [InlineData("127.0.0.1", MySqlSslMode.Required, true)]
+    [InlineData("127.1.2.3", MySqlSslMode.Required, true)]
+    [InlineData("::1", MySqlSslMode.Required, true)]
+    [InlineData("[::1]", MySqlSslMode.Required, true)]
+    [InlineData("host.docker.internal", MySqlSslMode.Required, true)]
+    [InlineData("/run/mysqld/mysqld.sock", MySqlSslMode.Required, true)]
+    [InlineData("localhost, 127.0.0.1", MySqlSslMode.Required, true)]
+    public void UnverifiedTlsWarning_IsQuiet_WhenVerifiedLocalOrAccepted(string host, MySqlSslMode sslMode,
+        bool isDefault)
+    {
+        Assert.Null(ConnectionStringFactory.UnverifiedTlsWarning(host, sslMode, isDefault));
+    }
+
     /// <summary>
     ///     MariaDB 11.4 and later turn on TLS with a generated certificate by default, so the default mode connects to
     ///     the test container over TLS.

@@ -101,9 +101,12 @@ disposable_db_start() {
   db_create_migration_user
 
   notice "Applying schema updates as ${REVIEW_MIGRATION_USER}..."
+  # The server's certificate is generated at startup, so it cannot be verified. Required is set explicitly to accept
+  # that on this internal network, which also keeps the upgrader from warning about it.
   if ! EXAMPLE_SCHEMA_PASSWORD="${REVIEW_MIGRATION_PASSWORD}" docker run --rm \
     --network "${NETWORK_NAME}" \
     -e "EXAMPLE_SCHEMA_HOST=${DB_CONTAINER}" \
+    -e "EXAMPLE_SCHEMA_SSL_MODE=Required" \
     -e "EXAMPLE_SCHEMA_NAME=${REVIEW_SCHEMA_NAME}" \
     -e "EXAMPLE_SCHEMA_JOURNAL_SCHEMA_NAME=${REVIEW_JOURNAL_SCHEMA}" \
     -e "EXAMPLE_SCHEMA_USER=${REVIEW_MIGRATION_USER}" \

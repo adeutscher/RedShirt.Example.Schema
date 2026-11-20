@@ -364,6 +364,11 @@ their own certificate. Use `VerifyFull` for deployed databases wherever a CA cer
 or `None` only for a local server that has no TLS set up. MariaDB 11.4 and later turn on TLS by default with a
 generated certificate, so `Required` works with them without extra setup.
 
+The upgrader prints a warning when it connects to a server that is not on this machine without validating the
+certificate: when the TLS mode is left at its default, or set to `Preferred` or `None`. Loopback addresses, `localhost`,
+Unix sockets and `host.docker.internal` count as this machine. To accept an unvalidated certificate on purpose, for
+example for a server whose certificate cannot be verified, set `EXAMPLE_SCHEMA_SSL_MODE=Required` explicitly.
+
 Do not export these from `~/.bashrc` or another shell profile. Every program started from that shell inherits the
 password, and profiles tend to end up in backups and dotfile repositories. Keep them in a file outside the repository
 that only you can read, and load it only for the run. For example, `~/.config/example-schema/production.env`:

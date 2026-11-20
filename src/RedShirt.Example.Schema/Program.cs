@@ -73,6 +73,14 @@ if (!string.IsNullOrWhiteSpace(schemaSslCa) && !File.Exists(schemaSslCa))
     throw new InvalidEnvironmentVariableException($"{varSslCa} file not found: {schemaSslCa}");
 }
 
+if (ConnectionStringFactory.UnverifiedTlsWarning(schemaHost, sslMode, string.IsNullOrWhiteSpace(schemaSslMode)) is
+    { } tlsWarning)
+{
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.Error.WriteLine(tlsWarning);
+    Console.ResetColor();
+}
+
 var connectionString = ConnectionStringFactory.Build(schemaHost, schemaUser, schemaPassword, schemaName, sslMode,
     schemaSslCa);
 
