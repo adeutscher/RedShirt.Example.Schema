@@ -12,7 +12,7 @@ public class ConnectionStringFactoryTests
     [Fact(Timeout = 120_000)]
     public async Task Build_DefaultMode_ConnectsOverTls()
     {
-        await using var mariaDb = new MariaDbBuilder("mariadb:12.3.2")
+        await using var mariaDb = new MariaDbBuilder("mariadb:12.3.3")
             .WithDatabase("example")
             .WithUsername("test")
             .WithPassword("test;with=chars")

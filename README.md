@@ -133,7 +133,7 @@ dump (no row data) suitable for review or diffing.
 ```
 
 The script requires a working Docker daemon. It does not use your `.env` or local database. Optional overrides include
-`DOCKER_IMAGE`, `TESTS_ENABLE`, `EXAMPLE_SCHEMA_NAME`, and `MARIADB_IMAGE` (defaults to `mariadb:12.3.2`, matching
+`DOCKER_IMAGE`, `TESTS_ENABLE`, `EXAMPLE_SCHEMA_NAME`, and `MARIADB_IMAGE` (defaults to `mariadb:12.3.3`, matching
 integration tests).
 
 Progress, warning and error messages from these scripts go to stderr and are coloured when stderr is a terminal. Set
