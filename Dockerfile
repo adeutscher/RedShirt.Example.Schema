@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/runtime-deps:11.0-noble-chiseled AS base
+FROM mcr.microsoft.com/dotnet/runtime-deps:11.0-resolute-chiseled AS base
 # hadolint ignore=DL3066
 USER $APP_UID
 WORKDIR /app
