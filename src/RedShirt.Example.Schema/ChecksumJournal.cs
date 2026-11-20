@@ -1,5 +1,5 @@
-using System.Data;
 using DbUp.Engine;
+using System.Data;
 
 namespace RedShirt.Example.Schema;
 

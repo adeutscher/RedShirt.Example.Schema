@@ -1,4 +1,5 @@
 using MySqlConnector;
+using System.Net;
 
 namespace RedShirt.Example.Schema;
 
@@ -9,6 +10,20 @@ internal static class ConnectionStringFactory
     ///     certificate is not validated. Use VerifyCA or VerifyFull wherever a trusted CA certificate is available.
     /// </summary>
     private const MySqlSslMode DefaultSslMode = MySqlSslMode.Required;
+
+    /// <summary>Loopback addresses, a Unix socket path, and the Docker host as seen from a container.</summary>
+    private static bool IsLocalHost(string host)
+    {
+        if (host.StartsWith('/')
+            || string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(host, "host.docker.internal", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return IPAddress.TryParse(host.Trim('[', ']'), out var address)
+               && IPAddress.IsLoopback(address);
+    }
 
     /// <summary>
     ///     Builds a connection string with <see cref="MySqlConnectionStringBuilder" />, so that values containing
@@ -32,6 +47,30 @@ internal static class ConnectionStringFactory
         }
 
         return builder.ConnectionString;
+    }
+
+    /// <summary>
+    ///     Parses a TLS mode name such as "Required" or "VerifyFull" (case-insensitive). Blank input gives
+    ///     <see cref="DefaultSslMode" />. Numeric values are rejected, so that a typo cannot select a mode by accident.
+    /// </summary>
+    public static bool TryParseSslMode(string? value, out MySqlSslMode sslMode)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            sslMode = DefaultSslMode;
+            return true;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.All(char.IsAsciiLetter)
+            && Enum.TryParse(trimmed, true, out sslMode)
+            && Enum.IsDefined(sslMode))
+        {
+            return true;
+        }
+
+        sslMode = DefaultSslMode;
+        return false;
     }
 
     /// <summary>
@@ -68,43 +107,5 @@ internal static class ConnectionStringFactory
         return $"Warning: {fallback}, so an attacker between here and {string.Join(", ", remote)} could read or " +
                "change the connection, including the password. Set the TLS mode to VerifyFull (or VerifyCA), with " +
                "a CA file if needed, or set it to Required explicitly to accept this.";
-    }
-
-    /// <summary>Loopback addresses, a Unix socket path, and the Docker host as seen from a container.</summary>
-    private static bool IsLocalHost(string host)
-    {
-        if (host.StartsWith('/')
-            || string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(host, "host.docker.internal", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return System.Net.IPAddress.TryParse(host.Trim('[', ']'), out var address)
-               && System.Net.IPAddress.IsLoopback(address);
-    }
-
-    /// <summary>
-    ///     Parses a TLS mode name such as "Required" or "VerifyFull" (case-insensitive). Blank input gives
-    ///     <see cref="DefaultSslMode" />. Numeric values are rejected, so that a typo cannot select a mode by accident.
-    /// </summary>
-    public static bool TryParseSslMode(string? value, out MySqlSslMode sslMode)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            sslMode = DefaultSslMode;
-            return true;
-        }
-
-        var trimmed = value.Trim();
-        if (trimmed.All(char.IsAsciiLetter)
-            && Enum.TryParse(trimmed, true, out sslMode)
-            && Enum.IsDefined(sslMode))
-        {
-            return true;
-        }
-
-        sslMode = DefaultSslMode;
-        return false;
     }
 }

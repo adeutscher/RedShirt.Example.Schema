@@ -35,7 +35,7 @@ YYYY/YYYY-MM/YYYY-MM-DD-NN-name.sql
   the file name. The regular expression captures each part and the script compares them.
 
 | Path under `Scripts/`                      | Result                           |
-| ------------------------------------------ | -------------------------------- |
+|--------------------------------------------|----------------------------------|
 | `2026/2026-10/2026-10-24-01-add-notes.sql` | Pass                             |
 | `2026/2026-09/2026-10-24-01-add-notes.sql` | Fail: directory month is `09`    |
 | `2026/2026-10/2026-10-24-01-Add_Notes.sql` | Fail: uppercase and underscore   |

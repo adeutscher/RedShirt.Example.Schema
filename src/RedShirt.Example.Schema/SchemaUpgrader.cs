@@ -10,26 +10,13 @@ internal static class SchemaUpgrader
     /// <summary>Default name of the DbUp journal table, which lists the applied scripts.</summary>
     public const string DefaultJournalTable = "Patches";
 
+    /// <summary>How long an upgrade waits for another upgrade of the same database to finish.</summary>
+    public static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromMinutes(5);
+
     /// <summary>The journal and checksum tables, which move together between schemas.</summary>
     private static string[] JournalTables(string journalTable)
     {
         return [journalTable, ScriptChecksums.TableName];
-    }
-
-    /// <summary>
-    ///     Default schema for the journal and checksum tables: the application schema's name with <c>_changes</c> added.
-    ///     Keeping them out of the application schema means that the application's user can be granted that whole schema
-    ///     without being able to change the journal.
-    /// </summary>
-    public static string DefaultJournalSchema(string databaseName)
-    {
-        var name = $"{databaseName}_changes";
-        // MariaDB/MySQL schema names are at most 64 characters.
-        return name.Length <= 64
-            ? name
-            : throw new ArgumentException(
-                $"Default journal schema name {name} is longer than 64 characters. Set the journal schema explicitly.",
-                nameof(databaseName));
     }
 
     /// <summary>
@@ -55,127 +42,6 @@ internal static class SchemaUpgrader
             .Build();
     }
 
-    /// <summary>
-    ///     Lists the embedded scripts that have not yet been journaled, in the order they would run. Does not create the
-    ///     journal table or change the database.
-    /// </summary>
-    public static IReadOnlyList<string> GetPendingScripts(string connectionString, string databaseName,
-        string? journalSchema = null, string? journalTable = null)
-    {
-        return BuildEngine(connectionString, journalSchema ?? DefaultJournalSchema(databaseName),
-                journalTable ?? DefaultJournalTable)
-            .GetScriptsToExecute()
-            .Select(s => s.Name)
-            .ToList();
-    }
-
-    /// <summary>
-    ///     Result of comparing applied scripts with the embedded scripts. Problems block an upgrade. Unrecorded scripts
-    ///     were applied before checksums were kept, and have their checksums recorded on the next upgrade.
-    /// </summary>
-    internal sealed record IntegrityReport(
-        IReadOnlyList<string> Problems,
-        IReadOnlyList<(string Name, string Sha256)> Unrecorded);
-
-    /// <summary>
-    ///     Checks that every applied script still matches its recorded checksum and still exists. Does not change the
-    ///     database.
-    /// </summary>
-    internal static IntegrityReport CheckIntegrity(UpgradeEngine engine, string connectionString,
-        string journalSchema)
-    {
-        var problems = new List<string>();
-        var unrecorded = new List<(string, string)>();
-
-        var executed = engine.GetExecutedScripts().ToHashSet(StringComparer.Ordinal);
-        if (executed.Count == 0)
-        {
-            return new IntegrityReport(problems, unrecorded);
-        }
-
-        var recorded = ReadChecksums(connectionString, journalSchema);
-
-        foreach (var script in engine.GetDiscoveredScripts().Where(s => executed.Contains(s.Name)))
-        {
-            var actual = ScriptChecksums.Compute(script.Contents);
-            if (!recorded.TryGetValue(script.Name, out var expected))
-            {
-                unrecorded.Add((script.Name, actual));
-            }
-            else if (!string.Equals(expected, actual, StringComparison.Ordinal))
-            {
-                problems.Add($"{script.Name}: changed since it was applied (checksum {expected}, now {actual}). " +
-                             "Restore the original and add a new script instead.");
-            }
-        }
-
-        foreach (var name in engine.GetExecutedButNotDiscoveredScripts())
-        {
-            problems.Add($"{name}: applied, but no longer embedded. It was renamed or deleted. A renamed script " +
-                         "would run again. Restore it under its original name.");
-        }
-
-        return new IntegrityReport(problems, unrecorded);
-    }
-
-    /// <summary>
-    ///     Checks for checksums of applied scripts while the journal is missing or empty. Checksums are only recorded for
-    ///     applied scripts, so this means that the journal is somewhere else: its table was renamed, or the journal
-    ///     schema setting no longer points at it. Upgrading would start an empty journal and run every script again.
-    ///     Looks in the journal schema, the application schema and the default journal schema. Returns the problem, or
-    ///     null. Does not change the database.
-    /// </summary>
-    internal static string? FindOrphanedChecksums(UpgradeEngine engine, string connectionString, string databaseName,
-        string journalSchema, string journalTable)
-    {
-        if (engine.GetExecutedScripts().Count > 0)
-        {
-            return null;
-        }
-
-        var schemas = new List<string> {journalSchema, databaseName};
-        if (DefaultJournalSchemaOrNull(databaseName) is { } defaultSchema)
-        {
-            schemas.Add(defaultSchema);
-        }
-
-        using var connection = new MySqlConnection(connectionString);
-        connection.Open();
-
-        foreach (var schema in schemas.Distinct(StringComparer.Ordinal))
-        {
-            // Not visible without privileges on it, in which case it cannot be checked.
-            if (!TableExists(connection, schema, ScriptChecksums.TableName))
-            {
-                continue;
-            }
-
-            long count;
-            try
-            {
-                using var command = new MySqlCommand(
-                    $"SELECT COUNT(*) FROM {ScriptChecksums.QuoteIdentifier(schema)}." +
-                    ScriptChecksums.QuoteIdentifier(ScriptChecksums.TableName), connection);
-                count = Convert.ToInt64(command.ExecuteScalar());
-            }
-            catch (MySqlException e) when (e.ErrorCode is MySqlErrorCode.TableAccessDenied
-                                               or MySqlErrorCode.DatabaseAccessDenied)
-            {
-                continue;
-            }
-
-            if (count > 0)
-            {
-                return $"{schema}.{ScriptChecksums.TableName} has checksums for {count} applied script(s), but the " +
-                       $"journal {journalSchema}.{journalTable} is missing or empty, so every script would run " +
-                       "again. Check that the journal schema and table name settings point at the existing journal. " +
-                       $"To start over deliberately, delete the rows in {schema}.{ScriptChecksums.TableName} first.";
-            }
-        }
-
-        return null;
-    }
-
     private static string? DefaultJournalSchemaOrNull(string databaseName)
     {
         try
@@ -199,12 +65,6 @@ internal static class SchemaUpgrader
         command.Parameters.AddWithValue("@table", table);
         return Convert.ToInt32(command.ExecuteScalar()) > 0;
     }
-
-    /// <summary>
-    ///     Where the journal is, relative to where it should be. <see cref="TablesToMove" /> are journal tables still in
-    ///     the application schema, from before the journal had its own schema.
-    /// </summary>
-    private sealed record JournalLocation(string? Problem, IReadOnlyList<string> TablesToMove);
 
     /// <summary>
     ///     Checks that the journal schema exists and finds journal tables left in the application schema. Moving them
@@ -337,6 +197,104 @@ internal static class SchemaUpgrader
         Console.ResetColor();
     }
 
+    /// <summary>Takes the upgrade lock. Returns null if the lock could not be taken in time.</summary>
+    private static UpgradeLock? AcquireUpgradeLock(string connectionString, string databaseName, TimeSpan timeout)
+    {
+        var connection = new MySqlConnection(connectionString);
+        try
+        {
+            connection.Open();
+
+            if (TryGetLock(connection, databaseName, TimeSpan.Zero))
+            {
+                return new UpgradeLock(connection, LockName(databaseName));
+            }
+
+            Console.WriteLine(
+                $"Another upgrade of {databaseName} is running. Waiting up to {timeout} for it to finish...");
+            if (TryGetLock(connection, databaseName, timeout))
+            {
+                return new UpgradeLock(connection, LockName(databaseName));
+            }
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
+        }
+
+        connection.Dispose();
+        return null;
+    }
+
+    private static bool TryGetLock(MySqlConnection connection, string databaseName, TimeSpan timeout)
+    {
+        using var command = new MySqlCommand("SELECT GET_LOCK(@name, @timeout)", connection);
+        command.Parameters.AddWithValue("@name", LockName(databaseName));
+        command.Parameters.AddWithValue("@timeout", (int) Math.Ceiling(timeout.TotalSeconds));
+        // GET_LOCK waits on the server, so the command must not time out first.
+        command.CommandTimeout = 0;
+        // 1 when taken, 0 on timeout, NULL on error.
+        return command.ExecuteScalar() is { } result and not DBNull && Convert.ToInt32(result) == 1;
+    }
+
+    /// <summary>
+    ///     Checks that every applied script still matches its recorded checksum and still exists. Does not change the
+    ///     database.
+    /// </summary>
+    internal static IntegrityReport CheckIntegrity(UpgradeEngine engine, string connectionString,
+        string journalSchema)
+    {
+        var problems = new List<string>();
+        var unrecorded = new List<(string, string)>();
+
+        var executed = engine.GetExecutedScripts().ToHashSet(StringComparer.Ordinal);
+        if (executed.Count == 0)
+        {
+            return new IntegrityReport(problems, unrecorded);
+        }
+
+        var recorded = ReadChecksums(connectionString, journalSchema);
+
+        foreach (var script in engine.GetDiscoveredScripts().Where(s => executed.Contains(s.Name)))
+        {
+            var actual = ScriptChecksums.Compute(script.Contents);
+            if (!recorded.TryGetValue(script.Name, out var expected))
+            {
+                unrecorded.Add((script.Name, actual));
+            }
+            else if (!string.Equals(expected, actual, StringComparison.Ordinal))
+            {
+                problems.Add($"{script.Name}: changed since it was applied (checksum {expected}, now {actual}). " +
+                             "Restore the original and add a new script instead.");
+            }
+        }
+
+        foreach (var name in engine.GetExecutedButNotDiscoveredScripts())
+        {
+            problems.Add($"{name}: applied, but no longer embedded. It was renamed or deleted. A renamed script " +
+                         "would run again. Restore it under its original name.");
+        }
+
+        return new IntegrityReport(problems, unrecorded);
+    }
+
+    /// <summary>
+    ///     Default schema for the journal and checksum tables: the application schema's name with <c>_changes</c> added.
+    ///     Keeping them out of the application schema means that the application's user can be granted that whole schema
+    ///     without being able to change the journal.
+    /// </summary>
+    public static string DefaultJournalSchema(string databaseName)
+    {
+        var name = $"{databaseName}_changes";
+        // MariaDB/MySQL schema names are at most 64 characters.
+        return name.Length <= 64
+            ? name
+            : throw new ArgumentException(
+                $"Default journal schema name {name} is longer than 64 characters. Set the journal schema explicitly.",
+                nameof(databaseName));
+    }
+
     /// <param name="connectionString"></param>
     /// <param name="databaseName">Schema that the update scripts change.</param>
     /// <param name="journalSchema">
@@ -402,8 +360,77 @@ internal static class SchemaUpgrader
         return 0;
     }
 
-    /// <summary>How long an upgrade waits for another upgrade of the same database to finish.</summary>
-    public static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromMinutes(5);
+    /// <summary>
+    ///     Checks for checksums of applied scripts while the journal is missing or empty. Checksums are only recorded for
+    ///     applied scripts, so this means that the journal is somewhere else: its table was renamed, or the journal
+    ///     schema setting no longer points at it. Upgrading would start an empty journal and run every script again.
+    ///     Looks in the journal schema, the application schema and the default journal schema. Returns the problem, or
+    ///     null. Does not change the database.
+    /// </summary>
+    internal static string? FindOrphanedChecksums(UpgradeEngine engine, string connectionString, string databaseName,
+        string journalSchema, string journalTable)
+    {
+        if (engine.GetExecutedScripts().Count > 0)
+        {
+            return null;
+        }
+
+        var schemas = new List<string> {journalSchema, databaseName};
+        if (DefaultJournalSchemaOrNull(databaseName) is { } defaultSchema)
+        {
+            schemas.Add(defaultSchema);
+        }
+
+        using var connection = new MySqlConnection(connectionString);
+        connection.Open();
+
+        foreach (var schema in schemas.Distinct(StringComparer.Ordinal))
+        {
+            // Not visible without privileges on it, in which case it cannot be checked.
+            if (!TableExists(connection, schema, ScriptChecksums.TableName))
+            {
+                continue;
+            }
+
+            long count;
+            try
+            {
+                using var command = new MySqlCommand(
+                    $"SELECT COUNT(*) FROM {ScriptChecksums.QuoteIdentifier(schema)}." +
+                    ScriptChecksums.QuoteIdentifier(ScriptChecksums.TableName), connection);
+                count = Convert.ToInt64(command.ExecuteScalar());
+            }
+            catch (MySqlException e) when (e.ErrorCode is MySqlErrorCode.TableAccessDenied
+                                               or MySqlErrorCode.DatabaseAccessDenied)
+            {
+                continue;
+            }
+
+            if (count > 0)
+            {
+                return $"{schema}.{ScriptChecksums.TableName} has checksums for {count} applied script(s), but the " +
+                       $"journal {journalSchema}.{journalTable} is missing or empty, so every script would run " +
+                       "again. Check that the journal schema and table name settings point at the existing journal. " +
+                       $"To start over deliberately, delete the rows in {schema}.{ScriptChecksums.TableName} first.";
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Lists the embedded scripts that have not yet been journaled, in the order they would run. Does not create the
+    ///     journal table or change the database.
+    /// </summary>
+    public static IReadOnlyList<string> GetPendingScripts(string connectionString, string databaseName,
+        string? journalSchema = null, string? journalTable = null)
+    {
+        return BuildEngine(connectionString, journalSchema ?? DefaultJournalSchema(databaseName),
+                journalTable ?? DefaultJournalTable)
+            .GetScriptsToExecute()
+            .Select(s => s.Name)
+            .ToList();
+    }
 
     /// <summary>
     ///     Name of the server-wide lock that keeps two upgrades of the same database from running at once. MariaDB/MySQL
@@ -415,68 +442,6 @@ internal static class SchemaUpgrader
         return name.Length <= 64
             ? name
             : $"schema-upgrade:{ScriptChecksums.Compute(databaseName)[..40]}";
-    }
-
-    /// <summary>
-    ///     Holds the upgrade lock on its own connection. Disposing releases the lock explicitly, since a pooled connection
-    ///     goes back to the pool rather than ending its session. If the process dies, the server releases the lock when
-    ///     the session ends.
-    /// </summary>
-    private sealed class UpgradeLock(MySqlConnection connection, string name) : IDisposable
-    {
-        public void Dispose()
-        {
-            try
-            {
-                using var command = new MySqlCommand("SELECT RELEASE_LOCK(@name)", connection);
-                command.Parameters.AddWithValue("@name", name);
-                command.ExecuteScalar();
-            }
-            finally
-            {
-                connection.Dispose();
-            }
-        }
-    }
-
-    /// <summary>Takes the upgrade lock. Returns null if the lock could not be taken in time.</summary>
-    private static UpgradeLock? AcquireUpgradeLock(string connectionString, string databaseName, TimeSpan timeout)
-    {
-        var connection = new MySqlConnection(connectionString);
-        try
-        {
-            connection.Open();
-
-            if (TryGetLock(connection, databaseName, TimeSpan.Zero))
-            {
-                return new UpgradeLock(connection, LockName(databaseName));
-            }
-
-            Console.WriteLine($"Another upgrade of {databaseName} is running. Waiting up to {timeout} for it to finish...");
-            if (TryGetLock(connection, databaseName, timeout))
-            {
-                return new UpgradeLock(connection, LockName(databaseName));
-            }
-        }
-        catch
-        {
-            connection.Dispose();
-            throw;
-        }
-
-        connection.Dispose();
-        return null;
-    }
-
-    private static bool TryGetLock(MySqlConnection connection, string databaseName, TimeSpan timeout)
-    {
-        using var command = new MySqlCommand("SELECT GET_LOCK(@name, @timeout)", connection);
-        command.Parameters.AddWithValue("@name", LockName(databaseName));
-        command.Parameters.AddWithValue("@timeout", (int)Math.Ceiling(timeout.TotalSeconds));
-        // GET_LOCK waits on the server, so the command must not time out first.
-        command.CommandTimeout = 0;
-        // 1 when taken, 0 on timeout, NULL on error.
-        return command.ExecuteScalar() is { } result and not DBNull && Convert.ToInt32(result) == 1;
     }
 
     /// <param name="connectionString"></param>
@@ -500,7 +465,8 @@ internal static class SchemaUpgrader
         if (upgradeLock is null)
         {
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"Another upgrade of {databaseName} did not finish within {timeout}. Nothing was applied.");
+            Console.WriteLine(
+                $"Another upgrade of {databaseName} did not finish within {timeout}. Nothing was applied.");
             Console.ResetColor();
             return -1;
         }
@@ -554,5 +520,41 @@ internal static class SchemaUpgrader
         Console.WriteLine("Success!");
         Console.ResetColor();
         return 0;
+    }
+
+    /// <summary>
+    ///     Result of comparing applied scripts with the embedded scripts. Problems block an upgrade. Unrecorded scripts
+    ///     were applied before checksums were kept, and have their checksums recorded on the next upgrade.
+    /// </summary>
+    internal sealed record IntegrityReport(
+        IReadOnlyList<string> Problems,
+        IReadOnlyList<(string Name, string Sha256)> Unrecorded);
+
+    /// <summary>
+    ///     Where the journal is, relative to where it should be. <see cref="TablesToMove" /> are journal tables still in
+    ///     the application schema, from before the journal had its own schema.
+    /// </summary>
+    private sealed record JournalLocation(string? Problem, IReadOnlyList<string> TablesToMove);
+
+    /// <summary>
+    ///     Holds the upgrade lock on its own connection. Disposing releases the lock explicitly, since a pooled connection
+    ///     goes back to the pool rather than ending its session. If the process dies, the server releases the lock when
+    ///     the session ends.
+    /// </summary>
+    private sealed class UpgradeLock(MySqlConnection connection, string name) : IDisposable
+    {
+        public void Dispose()
+        {
+            try
+            {
+                using var command = new MySqlCommand("SELECT RELEASE_LOCK(@name)", connection);
+                command.Parameters.AddWithValue("@name", name);
+                command.ExecuteScalar();
+            }
+            finally
+            {
+                connection.Dispose();
+            }
+        }
     }
 }

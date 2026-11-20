@@ -12,8 +12,8 @@ This is a template project, which means are a few special considerations:
   updates as would be intended for an applied project, this template maintains a single file:
   `Scripts/0000/0000-01/0000-00-00-00-example.sql`. The data within the template tables while it is acting as a
   template are assumed to be entirely disposable.
-  * The tables declared in this template are in service of the API template
-  at [RedShirt.Example.Api](https://github.com/adeutscher/RedShirt.Example.Api).
+    * The tables declared in this template are in service of the API template
+      at [RedShirt.Example.Api](https://github.com/adeutscher/RedShirt.Example.Api).
 
 ### Initialization
 
@@ -238,7 +238,7 @@ Use separate database accounts for setting up the database, applying schema upda
 None of them should be `root` in a deployed database.
 
 | User        | Used by                    | Privileges                                        |
-| ----------- | -------------------------- | ------------------------------------------------- |
+|-------------|----------------------------|---------------------------------------------------|
 | Admin       | DBA, one-time setup        | Global (existing account)                         |
 | Migration   | This upgrader, each deploy | DDL and DML on the schema, append to its journal  |
 | Application | The application services   | DML on the schema, no DDL, nothing on the journal |
@@ -352,7 +352,7 @@ The following optional variables control TLS:
   described under [Docker](#docker).
 
 | Mode         | Encrypted      | Server certificate checked          |
-| ------------ | -------------- | ----------------------------------- |
+|--------------|----------------|-------------------------------------|
 | `None`       | No             | No                                  |
 | `Preferred`  | When available | No                                  |
 | `Required`   | Yes            | No                                  |

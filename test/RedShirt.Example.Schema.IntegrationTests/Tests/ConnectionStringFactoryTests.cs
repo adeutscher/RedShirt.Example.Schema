@@ -5,6 +5,44 @@ namespace RedShirt.Example.Schema.IntegrationTests.Tests;
 
 public class ConnectionStringFactoryTests
 {
+    /// <summary>
+    ///     MariaDB 11.4 and later turn on TLS with a generated certificate by default, so the default mode connects to
+    ///     the test container over TLS.
+    /// </summary>
+    [Fact(Timeout = 120_000)]
+    public async Task Build_DefaultMode_ConnectsOverTls()
+    {
+        await using var mariaDb = new MariaDbBuilder("mariadb:12.3.2")
+            .WithDatabase("example")
+            .WithUsername("test")
+            .WithPassword("test;with=chars")
+            .Build();
+        await mariaDb.StartAsync(TestContext.Current.CancellationToken);
+
+        var builder = new MySqlConnectionStringBuilder(
+            ConnectionStringFactory.Build(mariaDb.Hostname, "test", "test;with=chars", "example"))
+        {
+            Port = mariaDb.GetMappedPublicPort(MariaDbBuilder.MariaDbPort)
+        };
+
+        await using var connection = new MySqlConnection(builder.ConnectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+
+        await using var command = new MySqlCommand("SHOW SESSION STATUS LIKE 'Ssl_cipher'", connection);
+        await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
+        Assert.False(string.IsNullOrEmpty(reader.GetString(1)));
+    }
+
+    [Fact]
+    public void Build_DefaultsToRequiredTls()
+    {
+        var parsed = new MySqlConnectionStringBuilder(ConnectionStringFactory.Build("h", "u", "p", "d"));
+
+        Assert.Equal(MySqlSslMode.Required, parsed.SslMode);
+        Assert.Equal(string.Empty, parsed.SslCa);
+    }
+
     [Fact]
     public void Build_EscapesValues_InsteadOfAddingOptions()
     {
@@ -17,15 +55,6 @@ public class ConnectionStringFactoryTests
         Assert.Equal("user;Database=other", parsed.UserID);
         Assert.Equal("example", parsed.Database);
         Assert.Equal(MySqlSslMode.Required, parsed.SslMode);
-    }
-
-    [Fact]
-    public void Build_DefaultsToRequiredTls()
-    {
-        var parsed = new MySqlConnectionStringBuilder(ConnectionStringFactory.Build("h", "u", "p", "d"));
-
-        Assert.Equal(MySqlSslMode.Required, parsed.SslMode);
-        Assert.Equal(string.Empty, parsed.SslCa);
     }
 
     [Fact]
@@ -65,22 +94,6 @@ public class ConnectionStringFactoryTests
     }
 
     [Theory]
-    [InlineData("db.example", MySqlSslMode.Required, true, "db.example")]
-    [InlineData("10.0.0.5", MySqlSslMode.Required, true, "10.0.0.5")]
-    [InlineData("db.example", MySqlSslMode.Preferred, false, "db.example")]
-    [InlineData("db.example", MySqlSslMode.None, false, "db.example")]
-    [InlineData("localhost,db.example", MySqlSslMode.Required, true, "db.example")]
-    public void UnverifiedTlsWarning_Warns_ForRemoteHosts(string host, MySqlSslMode sslMode, bool isDefault,
-        string remoteHost)
-    {
-        var warning = ConnectionStringFactory.UnverifiedTlsWarning(host, sslMode, isDefault);
-
-        Assert.NotNull(warning);
-        Assert.Contains(remoteHost, warning);
-        Assert.DoesNotContain("localhost", warning);
-    }
-
-    [Theory]
     [InlineData("db.example", MySqlSslMode.VerifyFull, true)]
     [InlineData("db.example", MySqlSslMode.VerifyCA, false)]
     [InlineData("db.example", MySqlSslMode.Required, false)]
@@ -99,32 +112,19 @@ public class ConnectionStringFactoryTests
         Assert.Null(ConnectionStringFactory.UnverifiedTlsWarning(host, sslMode, isDefault));
     }
 
-    /// <summary>
-    ///     MariaDB 11.4 and later turn on TLS with a generated certificate by default, so the default mode connects to
-    ///     the test container over TLS.
-    /// </summary>
-    [Fact(Timeout = 120_000)]
-    public async Task Build_DefaultMode_ConnectsOverTls()
+    [Theory]
+    [InlineData("db.example", MySqlSslMode.Required, true, "db.example")]
+    [InlineData("10.0.0.5", MySqlSslMode.Required, true, "10.0.0.5")]
+    [InlineData("db.example", MySqlSslMode.Preferred, false, "db.example")]
+    [InlineData("db.example", MySqlSslMode.None, false, "db.example")]
+    [InlineData("localhost,db.example", MySqlSslMode.Required, true, "db.example")]
+    public void UnverifiedTlsWarning_Warns_ForRemoteHosts(string host, MySqlSslMode sslMode, bool isDefault,
+        string remoteHost)
     {
-        await using var mariaDb = new MariaDbBuilder("mariadb:12.3.2")
-            .WithDatabase("example")
-            .WithUsername("test")
-            .WithPassword("test;with=chars")
-            .Build();
-        await mariaDb.StartAsync(TestContext.Current.CancellationToken);
+        var warning = ConnectionStringFactory.UnverifiedTlsWarning(host, sslMode, isDefault);
 
-        var builder = new MySqlConnectionStringBuilder(
-            ConnectionStringFactory.Build(mariaDb.Hostname, "test", "test;with=chars", "example"))
-        {
-            Port = mariaDb.GetMappedPublicPort(MariaDbBuilder.MariaDbPort)
-        };
-
-        await using var connection = new MySqlConnection(builder.ConnectionString);
-        await connection.OpenAsync(TestContext.Current.CancellationToken);
-
-        await using var command = new MySqlCommand("SHOW SESSION STATUS LIKE 'Ssl_cipher'", connection);
-        await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
-        Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
-        Assert.False(string.IsNullOrEmpty(reader.GetString(1)));
+        Assert.NotNull(warning);
+        Assert.Contains(remoteHost, warning);
+        Assert.DoesNotContain("localhost", warning);
     }
 }
