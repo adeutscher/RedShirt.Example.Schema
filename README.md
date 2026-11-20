@@ -62,8 +62,8 @@ The DbUp library has the following behaviour:
 
 * It shall iterate through the `.sql` files in the `Scripts/` directory of the `RedShirt.Example.Schema` project, which
   represent incremental updates to the schema.
-* It shall consult a journal table (hard-coded as `Patches` in `SchemaUpgrader.cs`) to verify `.sql` files that have
-  already been applied. The journal is kept in its own schema, `<name>_changes` by default (see
+* It shall consult a journal table (`Patches` by default, see `EXAMPLE_SCHEMA_JOURNAL_TABLE_NAME`) to verify `.sql`
+  files that have already been applied. The journal is kept in its own schema, `<name>_changes` by default (see
   [Journal Schema](#journal-schema)).
 
 In order to ensure that updates are executed in the intended order and to avoid one large directory, the following
@@ -295,6 +295,12 @@ application's user can be granted the whole application schema without being abl
 `EXAMPLE_SCHEMA_JOURNAL_SCHEMA_NAME` to use another name. Setting it to the application schema's own name keeps the
 journal there, as before this was added, at the cost of the protection above.
 
+**Journal table name**: Set `EXAMPLE_SCHEMA_JOURNAL_TABLE_NAME` to call the journal table something other than
+`Patches`. The checksum table is always `PatchChecksums`, so the journal table cannot have that name. Choose the name
+before the first upgrade. On an existing database, a new name makes the upgrader start an empty journal under it and
+apply every script again. To rename an existing journal, rename the table by hand with `RENAME TABLE` before the next
+upgrade, while no upgrade is running.
+
 **Existing databases**: Databases upgraded before this change have the journal tables in the application schema. Once
 an admin has created the journal schema and granted the migration user on it, the next upgrade moves the tables there
 with a single `RENAME TABLE` before doing anything else. A dry run reports the move without making it. The upgrader
@@ -322,6 +328,8 @@ Set the following necessary environment variables for the run:
 * `EXAMPLE_SCHEMA_NAME`: Name of your schema
 * `EXAMPLE_SCHEMA_JOURNAL_SCHEMA_NAME`: Optional. Schema for the journal and checksum tables. Defaults to
   `EXAMPLE_SCHEMA_NAME` with `_changes` added. See [Journal Schema](#journal-schema).
+* `EXAMPLE_SCHEMA_JOURNAL_TABLE_NAME`: Optional. Name of the journal table. Defaults to `Patches`. See
+  [Journal Schema](#journal-schema) before changing it on an existing database.
 * `EXAMPLE_SCHEMA_USER`: Username with which to access the target schema. Use a migration user as described in
   [Database Users](#database-users).
 * `EXAMPLE_SCHEMA_PASSWORD`: User password to access the target schema
