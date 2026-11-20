@@ -7,11 +7,12 @@ Example schema version tracking for a database table using DbUp library.
 This is a template project, which means are a few special considerations:
 
 * An applied application of this template would order its update scripts in accordance with the guideline set out in
-  the [File Organization and Maintenance](#file-organization-and-maintenance) section of this README. However, rather
-  than document the development of the template and apply incremental updates as would be intended for an applied
-  project, this template maintains a single file: `Scripts/0000/0000-01/0000-00-00-00-example.sql`. The data within the
-  template tables while it is acting as a template are assumed to be entirely disposable.
-* The tables declared in this template are in service of the API template
+  the [File Organization and Maintenance](#file-organization-and-maintenance) section of this README. However, this
+  template chooses to break its own rules. Rather than document the development of the template and apply incremental
+  updates as would be intended for an applied project, this template maintains a single file:
+  `Scripts/0000/0000-01/0000-00-00-00-example.sql`. The data within the template tables while it is acting as a
+  template are assumed to be entirely disposable.
+  * The tables declared in this template are in service of the API template
   at [RedShirt.Example.Api](https://github.com/adeutscher/RedShirt.Example.Api).
 
 ### Initialization
