@@ -24,4 +24,7 @@ ENV
 # The password goes in a file that docker-update.sh mounts, so that it is not visible in docker inspect.
 (umask 077 && printf '%s' "${LOCAL_SQL_PASSWORD}" >"${work_dir}/password")
 
-ENV_FILE="${work_dir}/env" PASSWORD_FILE="${work_dir}/password" ./docker-update.sh "$@"
+# EXAMPLE_SCHEMA_SSL_CA is a host path here, as for local-update.sh. docker-update.sh mounts the file and points the
+# container at its path inside the container.
+ENV_FILE="${work_dir}/env" PASSWORD_FILE="${work_dir}/password" CA_FILE="${EXAMPLE_SCHEMA_SSL_CA:-}" \
+  ./docker-update.sh "$@"

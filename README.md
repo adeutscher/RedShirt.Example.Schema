@@ -348,8 +348,8 @@ The following optional variables control TLS:
 
 * `EXAMPLE_SCHEMA_SSL_MODE`: TLS mode for the connection. Defaults to `Required`. See the table below.
 * `EXAMPLE_SCHEMA_SSL_CA`: Path to a CA certificate file (PEM) used to validate the server certificate with `VerifyCA`
-  or `VerifyFull`. When it is not set, the system trust store is used. With Docker, the file must be mounted into the
-  container and the path must be the path inside the container.
+  or `VerifyFull`. When it is not set, the system trust store is used. With Docker, set `CA_FILE` instead, as
+  described under [Docker](#docker).
 
 | Mode         | Encrypted      | Server certificate checked          |
 | ------------ | -------------- | ----------------------------------- |
@@ -427,6 +427,17 @@ PASSWORD_FILE=~/.config/example-schema/password ./docker-update.sh
 
 The file is mounted read-only into the container and passed as `EXAMPLE_SCHEMA_PASSWORD_FILE`. `local-docker-update.sh`
 does this for `LOCAL_SQL_PASSWORD`.
+
+For `VerifyCA` or `VerifyFull` with a CA that the image does not trust, set `CA_FILE` to the host path of the CA
+certificate:
+
+```bash
+CA_FILE=~/.config/example-schema/ca.pem PASSWORD_FILE=~/.config/example-schema/password ./docker-update.sh
+```
+
+The file is mounted read-only into the container, and `EXAMPLE_SCHEMA_SSL_CA` is set to its path there, overriding any
+value in `.env`. `local-docker-update.sh` does this with `EXAMPLE_SCHEMA_SSL_CA`, which it takes as a host path, as
+`local-update.sh` does.
 
 Set `TESTS_ENABLE=1` when building the image if you want `dotnet test` to run during `docker build` (the default is
 `0` for faster applies).
