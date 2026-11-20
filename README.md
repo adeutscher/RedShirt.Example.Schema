@@ -299,9 +299,14 @@ journal there, as before this was added, at the cost of the protection above.
 
 **Journal table name**: Set `EXAMPLE_SCHEMA_JOURNAL_TABLE_NAME` to call the journal table something other than
 `Patches`. The checksum table is always `PatchChecksums`, so the journal table cannot have that name. Choose the name
-before the first upgrade. On an existing database, a new name makes the upgrader start an empty journal under it and
-apply every script again. To rename an existing journal, rename the table by hand with `RENAME TABLE` before the next
+before the first upgrade. To rename an existing journal, rename the table by hand with `RENAME TABLE` before the next
 upgrade, while no upgrade is running.
+
+**Missing journal**: If the journal is missing or empty but `PatchChecksums` has rows, in the journal schema, the
+application schema or the default `<name>_changes` schema, the upgrader refuses to run. Checksums are only recorded for
+applied scripts, so this means that the journal is somewhere else, for example because its table name or the journal
+schema setting changed. Without this check, the upgrader would start an empty journal and apply every script again.
+Point the settings back at the existing journal, or, to start over on purpose, delete the `PatchChecksums` rows first.
 
 **Existing databases**: Databases upgraded before this change have the journal tables in the application schema. Once
 an admin has created the journal schema and granted the migration user on it, the next upgrade moves the tables there
@@ -453,7 +458,7 @@ application schema, as before the journal schema was added. Both local scripts p
 schema, but the local layout then differs from a deployed one, so the move and the separate journal grant are not
 exercised locally.
 Do not switch an existing local database back and forth between the two settings. Going from `example_changes` back to
-`example` is not moved for you, and the upgrader would see an empty journal in `example` and apply every script again.
+`example` is not moved for you, and the upgrader refuses to run, as described in [Journal Schema](#journal-schema).
 
 TLS defaults to `Required`, as for a deployed database. If your local server has no TLS set up, set
 `EXAMPLE_SCHEMA_SSL_MODE=Preferred` (or `None`) in your environment before running the local scripts.

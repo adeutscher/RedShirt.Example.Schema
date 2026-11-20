@@ -118,6 +118,76 @@ internal static class SchemaUpgrader
         return new IntegrityReport(problems, unrecorded);
     }
 
+    /// <summary>
+    ///     Checks for checksums of applied scripts while the journal is missing or empty. Checksums are only recorded for
+    ///     applied scripts, so this means that the journal is somewhere else: its table was renamed, or the journal
+    ///     schema setting no longer points at it. Upgrading would start an empty journal and run every script again.
+    ///     Looks in the journal schema, the application schema and the default journal schema. Returns the problem, or
+    ///     null. Does not change the database.
+    /// </summary>
+    internal static string? FindOrphanedChecksums(UpgradeEngine engine, string connectionString, string databaseName,
+        string journalSchema, string journalTable)
+    {
+        if (engine.GetExecutedScripts().Count > 0)
+        {
+            return null;
+        }
+
+        var schemas = new List<string> {journalSchema, databaseName};
+        if (DefaultJournalSchemaOrNull(databaseName) is { } defaultSchema)
+        {
+            schemas.Add(defaultSchema);
+        }
+
+        using var connection = new MySqlConnection(connectionString);
+        connection.Open();
+
+        foreach (var schema in schemas.Distinct(StringComparer.Ordinal))
+        {
+            // Not visible without privileges on it, in which case it cannot be checked.
+            if (!TableExists(connection, schema, ScriptChecksums.TableName))
+            {
+                continue;
+            }
+
+            long count;
+            try
+            {
+                using var command = new MySqlCommand(
+                    $"SELECT COUNT(*) FROM {ScriptChecksums.QuoteIdentifier(schema)}." +
+                    ScriptChecksums.QuoteIdentifier(ScriptChecksums.TableName), connection);
+                count = Convert.ToInt64(command.ExecuteScalar());
+            }
+            catch (MySqlException e) when (e.ErrorCode is MySqlErrorCode.TableAccessDenied
+                                               or MySqlErrorCode.DatabaseAccessDenied)
+            {
+                continue;
+            }
+
+            if (count > 0)
+            {
+                return $"{schema}.{ScriptChecksums.TableName} has checksums for {count} applied script(s), but the " +
+                       $"journal {journalSchema}.{journalTable} is missing or empty, so every script would run " +
+                       "again. Check that the journal schema and table name settings point at the existing journal. " +
+                       $"To start over deliberately, delete the rows in {schema}.{ScriptChecksums.TableName} first.";
+            }
+        }
+
+        return null;
+    }
+
+    private static string? DefaultJournalSchemaOrNull(string databaseName)
+    {
+        try
+        {
+            return DefaultJournalSchema(databaseName);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
     private static bool TableExists(MySqlConnection connection, string schema, string table)
     {
         using var command = new MySqlCommand(
@@ -295,6 +365,13 @@ internal static class SchemaUpgrader
         }
 
         var engine = BuildEngine(connectionString, journal, table);
+
+        if (FindOrphanedChecksums(engine, connectionString, databaseName, journal, table) is { } orphaned)
+        {
+            WriteError(orphaned);
+            return -1;
+        }
+
         var integrity = CheckIntegrity(engine, connectionString, journal);
         if (integrity.Problems.Count > 0)
         {
@@ -442,6 +519,12 @@ internal static class SchemaUpgrader
         }
 
         var upgrader = BuildEngine(connectionString, journal, table, scriptFilter);
+
+        if (FindOrphanedChecksums(upgrader, connectionString, databaseName, journal, table) is { } orphaned)
+        {
+            WriteError(orphaned);
+            return -1;
+        }
 
         var integrity = CheckIntegrity(upgrader, connectionString, journal);
         if (integrity.Problems.Count > 0)

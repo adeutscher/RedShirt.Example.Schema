@@ -322,6 +322,48 @@ public class SchemaUpgradeTests
         Assert.True(await TableExistsAsync(connectionString, DatabaseName, "Customers"));
     }
 
+    /// <summary>
+    ///     A journal table name changed on an existing database would start an empty journal and run every script again.
+    ///     The checksums of the applied scripts show that, so the upgrade refuses until they are deleted.
+    /// </summary>
+    [Fact(Timeout = 120_000)]
+    public async Task Upgrade_Refuses_WhenJournalTableIsRenamed()
+    {
+        const string journalTable = "SchemaVersions";
+
+        await using var mariaDb = BuildContainer();
+        await mariaDb.StartAsync(TestContext.Current.CancellationToken);
+        var connectionString = mariaDb.GetConnectionString();
+
+        Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
+
+        Assert.Equal(-1, SchemaUpgrader.DryRun(connectionString, DatabaseName, journalTable: journalTable));
+        Assert.Equal(-1, SchemaUpgrader.Upgrade(connectionString, DatabaseName, journalTable: journalTable));
+        Assert.False(await TableExistsAsync(connectionString, JournalSchema, journalTable));
+
+        // Starting over is possible once the checksums are deleted on purpose.
+        await ExecuteAsync(RootConnectionString(mariaDb), $"DELETE FROM {Journal(ScriptChecksums.TableName)}");
+        Assert.Equal(0, SchemaUpgrader.DryRun(connectionString, DatabaseName, journalTable: journalTable));
+    }
+
+    /// <summary>
+    ///     Pointing the journal schema back at the application schema after the journal was moved out would also start an
+    ///     empty journal. The checksums left in the default journal schema show that.
+    /// </summary>
+    [Fact(Timeout = 120_000)]
+    public async Task Upgrade_Refuses_WhenJournalSchemaIsSwitchedBack()
+    {
+        await using var mariaDb = BuildContainer();
+        await mariaDb.StartAsync(TestContext.Current.CancellationToken);
+        var connectionString = mariaDb.GetConnectionString();
+
+        Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
+
+        Assert.Equal(-1, SchemaUpgrader.DryRun(connectionString, DatabaseName, DatabaseName));
+        Assert.Equal(-1, SchemaUpgrader.Upgrade(connectionString, DatabaseName, journalSchema: DatabaseName));
+        Assert.False(await TableExistsAsync(connectionString, DatabaseName, SchemaUpgrader.DefaultJournalTable));
+    }
+
     [Fact]
     public void DefaultJournalSchema_AddsSuffix_AndRejectsOverlongNames()
     {
