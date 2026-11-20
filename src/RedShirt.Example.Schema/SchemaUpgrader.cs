@@ -9,6 +9,25 @@ internal static class SchemaUpgrader
 {
     public const string JournalTableName = "Patches";
 
+    /// <summary>The journal and checksum tables, which move together between schemas.</summary>
+    private static readonly string[] JournalTables = [JournalTableName, ScriptChecksums.TableName];
+
+    /// <summary>
+    ///     Default schema for the journal and checksum tables: the application schema's name with <c>_changes</c> added.
+    ///     Keeping them out of the application schema means that the application's user can be granted that whole schema
+    ///     without being able to change the journal.
+    /// </summary>
+    public static string DefaultJournalSchema(string databaseName)
+    {
+        var name = $"{databaseName}_changes";
+        // MariaDB/MySQL schema names are at most 64 characters.
+        return name.Length <= 64
+            ? name
+            : throw new ArgumentException(
+                $"Default journal schema name {name} is longer than 64 characters. Set the journal schema explicitly.",
+                nameof(databaseName));
+    }
+
     /// <summary>
     ///     Builds the upgrade engine. Each script runs in its own transaction, so a failed script is not journaled and
     ///     its DML is rolled back. Note that MariaDB/MySQL commit DDL statements implicitly, so a failed script may still
@@ -38,7 +57,7 @@ internal static class SchemaUpgrader
     public static IReadOnlyList<string> GetPendingScripts(string connectionString, string databaseName,
         string? journalSchema = null)
     {
-        return BuildEngine(connectionString, journalSchema ?? databaseName)
+        return BuildEngine(connectionString, journalSchema ?? DefaultJournalSchema(databaseName))
             .GetScriptsToExecute()
             .Select(s => s.Name)
             .ToList();
@@ -91,6 +110,88 @@ internal static class SchemaUpgrader
         }
 
         return new IntegrityReport(problems, unrecorded);
+    }
+
+    private static bool TableExists(MySqlConnection connection, string schema, string table)
+    {
+        using var command = new MySqlCommand(
+            """
+            SELECT COUNT(*) FROM information_schema.TABLES
+            WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @table
+            """, connection);
+        command.Parameters.AddWithValue("@schema", schema);
+        command.Parameters.AddWithValue("@table", table);
+        return Convert.ToInt32(command.ExecuteScalar()) > 0;
+    }
+
+    /// <summary>
+    ///     Where the journal is, relative to where it should be. <see cref="TablesToMove" /> are journal tables still in
+    ///     the application schema, from before the journal had its own schema.
+    /// </summary>
+    private sealed record JournalLocation(string? Problem, IReadOnlyList<string> TablesToMove);
+
+    /// <summary>
+    ///     Checks that the journal schema exists and finds journal tables left in the application schema. Moving them
+    ///     matters: an upgrade that read an empty journal in the new schema would run every script again.
+    /// </summary>
+    private static JournalLocation LocateJournal(string connectionString, string databaseName, string journalSchema)
+    {
+        if (string.Equals(journalSchema, databaseName, StringComparison.Ordinal))
+        {
+            return new JournalLocation(null, []);
+        }
+
+        using var connection = new MySqlConnection(connectionString);
+        connection.Open();
+
+        // SCHEMATA lists only schemas that the user has privileges on, so a missing grant looks like a missing schema.
+        using (var exists = new MySqlCommand(
+                   "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = @schema", connection))
+        {
+            exists.Parameters.AddWithValue("@schema", journalSchema);
+            if (Convert.ToInt32(exists.ExecuteScalar()) == 0)
+            {
+                return new JournalLocation(
+                    $"Journal schema {journalSchema} does not exist, or this user has no privileges on it. An admin " +
+                    "must create it and grant the migration user CREATE, SELECT and INSERT on it. To keep the " +
+                    $"journal in {databaseName} instead, set the journal schema to {databaseName}.", []);
+            }
+        }
+
+        var old = JournalTables.Where(t => TableExists(connection, databaseName, t)).ToList();
+        var current = JournalTables.Where(t => TableExists(connection, journalSchema, t)).ToList();
+
+        if (old.Count > 0 && current.Count > 0)
+        {
+            return new JournalLocation(
+                $"Journal tables exist in both {databaseName} ({string.Join(", ", old)}) and {journalSchema} " +
+                $"({string.Join(", ", current)}). Work out which journal is right and remove the other one.", []);
+        }
+
+        return new JournalLocation(null, old);
+    }
+
+    /// <summary>Moves the journal tables in one statement, so that they move together or not at all.</summary>
+    private static void MoveJournal(string connectionString, string databaseName, string journalSchema,
+        IReadOnlyList<string> tables)
+    {
+        var renames = tables.Select(t =>
+            $"{ScriptChecksums.QuoteIdentifier(databaseName)}.{ScriptChecksums.QuoteIdentifier(t)} TO " +
+            $"{ScriptChecksums.QuoteIdentifier(journalSchema)}.{ScriptChecksums.QuoteIdentifier(t)}");
+
+        using var connection = new MySqlConnection(connectionString);
+        connection.Open();
+        using var command = new MySqlCommand($"RENAME TABLE {string.Join(", ", renames)}", connection);
+        command.ExecuteNonQuery();
+
+        Console.WriteLine($"Moved {string.Join(", ", tables)} from {databaseName} to {journalSchema}.");
+    }
+
+    private static void WriteError(string message)
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine(message);
+        Console.ResetColor();
     }
 
     private static Dictionary<string, string> ReadChecksums(string connectionString, string journalSchema)
@@ -160,10 +261,28 @@ internal static class SchemaUpgrader
 
     /// <param name="connectionString"></param>
     /// <param name="databaseName">Schema that the update scripts change.</param>
-    /// <param name="journalSchema">Schema that holds the journal and checksum tables. Defaults to databaseName.</param>
+    /// <param name="journalSchema">
+    ///     Schema that holds the journal and checksum tables. Defaults to <see cref="DefaultJournalSchema" />.
+    /// </param>
     public static int DryRun(string connectionString, string databaseName, string? journalSchema = null)
     {
-        var journal = journalSchema ?? databaseName;
+        var journal = journalSchema ?? DefaultJournalSchema(databaseName);
+
+        var location = LocateJournal(connectionString, databaseName, journal);
+        if (location.Problem is not null)
+        {
+            WriteError(location.Problem);
+            return -1;
+        }
+
+        if (location.TablesToMove.Count > 0)
+        {
+            // Report from the journal where it is now, since nothing is moved in a dry run.
+            Console.WriteLine($"Dry run: {string.Join(", ", location.TablesToMove)} would be moved from " +
+                              $"{databaseName} to {journal}.");
+            journal = databaseName;
+        }
+
         var engine = BuildEngine(connectionString, journal);
         var integrity = CheckIntegrity(engine, connectionString, journal);
         if (integrity.Problems.Count > 0)
@@ -276,11 +395,13 @@ internal static class SchemaUpgrader
     /// <param name="databaseName">Schema that the update scripts change.</param>
     /// <param name="scriptFilter">Optional filter on embedded script names. Defaults to all embedded scripts.</param>
     /// <param name="lockTimeout">How long to wait for another upgrade. Defaults to <see cref="DefaultLockTimeout" />.</param>
-    /// <param name="journalSchema">Schema that holds the journal and checksum tables. Defaults to databaseName.</param>
+    /// <param name="journalSchema">
+    ///     Schema that holds the journal and checksum tables. Defaults to <see cref="DefaultJournalSchema" />.
+    /// </param>
     public static int Upgrade(string connectionString, string databaseName, Func<string, bool>? scriptFilter = null,
         TimeSpan? lockTimeout = null, string? journalSchema = null)
     {
-        var journal = journalSchema ?? databaseName;
+        var journal = journalSchema ?? DefaultJournalSchema(databaseName);
 
         // Two upgrades running at once would both see the same pending scripts and both run them. DbUp's MySQL support
         // takes no lock, so hold a named server lock for the whole check and upgrade.
@@ -292,6 +413,19 @@ internal static class SchemaUpgrader
             Console.WriteLine($"Another upgrade of {databaseName} did not finish within {timeout}. Nothing was applied.");
             Console.ResetColor();
             return -1;
+        }
+
+        // Under the lock, so that two upgrades do not both try to move the journal.
+        var location = LocateJournal(connectionString, databaseName, journal);
+        if (location.Problem is not null)
+        {
+            WriteError(location.Problem);
+            return -1;
+        }
+
+        if (location.TablesToMove.Count > 0)
+        {
+            MoveJournal(connectionString, databaseName, journal, location.TablesToMove);
         }
 
         var upgrader = BuildEngine(connectionString, journal, scriptFilter);

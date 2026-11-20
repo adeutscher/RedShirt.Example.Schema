@@ -80,9 +80,11 @@ var dryRun = args.Contains("--dry-run")
              || dryRunValue == "1"
              || string.Equals(dryRunValue, "true", StringComparison.OrdinalIgnoreCase);
 
-// The journal and checksum tables can live in their own schema, so that the application's user can be granted the
-// whole application schema without being able to change them.
-var journalSchema = string.IsNullOrWhiteSpace(schemaJournalName) ? schemaName : schemaJournalName.Trim();
+// The journal and checksum tables live in their own schema (by default the schema name with _changes added), so that
+// the application's user can be granted the whole application schema without being able to change them.
+var journalSchema = string.IsNullOrWhiteSpace(schemaJournalName)
+    ? SchemaUpgrader.DefaultJournalSchema(schemaName)
+    : schemaJournalName.Trim();
 
 return dryRun
     ? SchemaUpgrader.DryRun(connectionString, schemaName, journalSchema)
