@@ -29,5 +29,6 @@ else
 fi
 
 ./scripts/cicd/check-scripts.sh
+./scripts/cicd/check-privileges.sh
 
 echo "==> lint clean"

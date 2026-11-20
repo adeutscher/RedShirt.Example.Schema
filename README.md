@@ -260,7 +260,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON `example`.* TO 'example_app'@'%';
   `TRIGGER` for triggers, and `EVENT` for events. Avoid granting anything `ON *.*`.
 * `scripts/list-tables.sh`, `scripts/suggest-dto.sh` and the integration tests apply the scripts as a user with exactly
   this grant (`MIGRATION_PRIVILEGES` in `scripts/lib/disposable-db.sh` and `MigrationPrivileges` in the tests), so a
-  script that needs more fails there first with a "command denied" error. Keep both lists in step with the grant above.
+  script that needs more fails there first with a "command denied" error. `scripts/cicd/lint.sh` checks that both lists
+  match the grant above.
 
 **Application user**:
 

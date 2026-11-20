@@ -10,8 +10,8 @@ public class SchemaUpgradeTests
     private const string Password = "test";
 
     /// <summary>
-    ///     The migration user's privileges from the README (Database Users). Keep in step with the GRANT there and with
-    ///     MIGRATION_PRIVILEGES in scripts/lib/disposable-db.sh.
+    ///     The migration user's privileges from the README (Database Users). scripts/cicd/check-privileges.sh checks that
+    ///     this matches the GRANT there and MIGRATION_PRIVILEGES in scripts/lib/disposable-db.sh.
     /// </summary>
     private const string MigrationPrivileges = "SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES";
 

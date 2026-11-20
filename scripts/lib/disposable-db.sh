@@ -38,7 +38,7 @@ MARIADB_IMAGE="${MARIADB_IMAGE:-mariadb:12.3.2}"
 MARIADB_ROOT_PASSWORD="${MARIADB_ROOT_PASSWORD:-${REVIEW_SCHEMA_PASSWORD}}"
 # The bootstrap account, used to create the migration user and for the read-only review queries.
 REVIEW_ADMIN_USER="root"
-# Keep in step with the migration user's GRANT in the README (Database Users).
+# Must match the migration user's GRANT in the README (Database Users). scripts/cicd/check-privileges.sh checks this.
 MIGRATION_PRIVILEGES="SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES"
 
 # Passwords are handed to docker as bare "-e NAME" options with the value in docker's own environment, so they never
