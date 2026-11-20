@@ -146,6 +146,8 @@ file in two marked blocks:
 * **Disposable database server**: Docker image (`MARIADB_IMAGE`), MariaDB bootstrap environment variables
   (`MARIADB_ROOT_PASSWORD`, `MARIADB_DATABASE`), and readiness via a TCP `mariadb` client on the same Docker
   network (not `mariadb-admin ping` on localhost, which can succeed before remote connections work).
+  That network is internal and gives the host no address on it, so neither the internet nor other users and processes
+  on the host can reach the disposable database. Only the script's own containers can.
   The script also creates the journal schema. The upgrader then runs as a migration user (`REVIEW_MIGRATION_USER`,
   default `schema_migrator`) that is created with only `MIGRATION_PRIVILEGES` on the review schema and
   `JOURNAL_PRIVILEGES` on the journal schema, as described in [Database Users](#database-users).

@@ -55,7 +55,11 @@ disposable_db_cleanup() {
 disposable_db_start() {
   trap disposable_db_cleanup EXIT
 
-  docker network create "${NETWORK_NAME}" >/dev/null
+  # The network is internal, so the database has no route out, and the host gets no address on it, so local users and
+  # processes on the host cannot reach the database either. Only containers attached to the network can.
+  docker network create --internal \
+    -o com.docker.network.bridge.inhibit_ipv4=true \
+    "${NETWORK_NAME}" >/dev/null
 
   MARIADB_ROOT_PASSWORD="${MARIADB_ROOT_PASSWORD}" docker run -d \
     --name "${DB_CONTAINER}" \
