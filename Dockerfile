@@ -1,9 +1,9 @@
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled AS base
+FROM mcr.microsoft.com/dotnet/runtime-deps:11.0-noble-chiseled AS base
 # hadolint ignore=DL3066
 USER $APP_UID
 WORKDIR /app
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 ARG BUILD_CONFIGURATION=Release
 
 WORKDIR /build
