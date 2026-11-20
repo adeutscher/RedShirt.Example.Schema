@@ -62,7 +62,8 @@ The DbUp library has the following behaviour:
 * It shall iterate through the `.sql` files in the `Scripts/` directory of the `RedShirt.Example.Schema` project, which
   represent incremental updates to the schema.
 * It shall consult a journal table (hard-coded as `Patches` in `SchemaUpgrader.cs`) to verify `.sql` files that have
-  already been applied.
+  already been applied. The journal is kept in its own schema, `<name>_changes` by default (see
+  [Journal Schema](#journal-schema)).
 
 In order to ensure that updates are executed in the intended order and to avoid one large directory, the following
 guidelines are strongly advised:
@@ -87,7 +88,8 @@ Both rules are enforced by `scripts/cicd/check-scripts.sh`, which runs as part o
 See [Update Script Lint](docs/update-script-lint.md) for how the checks work and what they do not catch.
 
 The upgrader also checks this at runtime. DbUp journals scripts by name only, so the upgrader stores a SHA-256 checksum
-of each applied script in a `PatchChecksums` table, written in the same transaction as the journal entry. Before
+of each applied script in a `PatchChecksums` table next to the journal, written in the same transaction as the journal
+entry. Before
 applying anything, an upgrade or dry run compares every applied script with its checksum and stops without changing
 the database if one was edited, or if a journaled script is no longer embedded (renamed or deleted). Checksums ignore
 line endings, so a Windows checkout matches a Linux one. Scripts applied before checksums were kept have their
@@ -143,8 +145,9 @@ file in two marked blocks:
 * **Disposable database server**: Docker image (`MARIADB_IMAGE`), MariaDB bootstrap environment variables
   (`MARIADB_ROOT_PASSWORD`, `MARIADB_DATABASE`), and readiness via a TCP `mariadb` client on the same Docker
   network (not `mariadb-admin ping` on localhost, which can succeed before remote connections work).
-  The upgrader then runs as a migration user (`REVIEW_MIGRATION_USER`, default `schema_migrator`) that is created
-  with only `MIGRATION_PRIVILEGES` on the review schema, as described in [Database Users](#database-users).
+  The script also creates the journal schema. The upgrader then runs as a migration user (`REVIEW_MIGRATION_USER`,
+  default `schema_migrator`) that is created with only `MIGRATION_PRIVILEGES` on the review schema and
+  `JOURNAL_PRIVILEGES` on the journal schema, as described in [Database Users](#database-users).
 * **Queries and schema dump**: `mariadb --batch` for `information_schema` queries and `mariadb-dump` with `--no-data`
   (replace with your engine's client and schema export tool when pivoting away from MariaDB/MySQL).
 
@@ -156,7 +159,7 @@ scripts.
 
 `scripts/list-tables.sh` applies all embedded update scripts to the same kind of disposable database, then prints the
 table names in the applied schema, one per line. The DbUp journal table (`Patches`) and the script checksum table
-(`PatchChecksums`) are left out unless `--all` is given.
+(`PatchChecksums`) are in the journal schema, so they are left out unless `--all` is given.
 
 ```bash
 ./scripts/list-tables.sh
@@ -206,8 +209,8 @@ timestamp columns, renamed columns, unmapped types) are printed to stderr. Integ
 
 Instructions on how to apply schema updates.
 
-The target database must already exist before running `update.sh` or `local-update.sh`. These scripts apply schema
-patches to an existing database; they do not create the database itself.
+The target database and its journal schema must already exist before running `update.sh` or `local-update.sh`. These
+scripts apply schema patches to an existing database; they do not create either schema.
 
 ### Dry Run
 
@@ -231,21 +234,23 @@ The Docker scripts (`docker-update.sh` and `local-docker-update.sh`) accept `--d
 Use separate database accounts for setting up the database, applying schema updates, and running the application.
 None of them should be `root` in a deployed database.
 
-| User        | Used by                    | Privileges                |
-| ----------- | -------------------------- | ------------------------- |
-| Admin       | DBA, one-time setup        | Global (existing account) |
-| Migration   | This upgrader, each deploy | DDL and DML on one schema |
-| Application | The application services   | DML on one schema, no DDL |
+| User        | Used by                    | Privileges                                        |
+| ----------- | -------------------------- | ------------------------------------------------- |
+| Admin       | DBA, one-time setup        | Global (existing account)                         |
+| Migration   | This upgrader, each deploy | DDL and DML on the schema, append to its journal  |
+| Application | The application services   | DML on the schema, no DDL, nothing on the journal |
 
-The upgrader does not create the database, so it never needs global privileges. An admin creates the schema and the
-two users once:
+The upgrader does not create either schema, so it never needs global privileges. An admin creates the schema, its
+[journal schema](#journal-schema) and the two users once:
 
 ```sql
 CREATE DATABASE `example`;
+CREATE DATABASE `example_changes`;
 
 CREATE USER 'example_migrator'@'%' IDENTIFIED BY 'redacted' REQUIRE SSL;
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES
   ON `example`.* TO 'example_migrator'@'%';
+GRANT SELECT, INSERT, CREATE ON `example\_changes`.* TO 'example_migrator'@'%';
 
 CREATE USER 'example_app'@'%' IDENTIFIED BY 'redacted' REQUIRE SSL;
 GRANT SELECT, INSERT, UPDATE, DELETE ON `example`.* TO 'example_app'@'%';
@@ -253,28 +258,25 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON `example`.* TO 'example_app'@'%';
 
 **Migration user**:
 
-* Set it as `EXAMPLE_SCHEMA_USER`. It needs DML for the `Patches` and `PatchChecksums` tables and for scripts that move
-  data. `GET_LOCK` (the upgrade lock) needs no privilege.
+* Set it as `EXAMPLE_SCHEMA_USER`. It needs DML on the application schema for scripts that move data.
+* On the journal schema it only creates the journal tables and adds rows to them, so it cannot rewrite or delete
+  journal history. `CREATE` and `INSERT` there also let it move journal tables in from the application schema (see
+  [Journal Schema](#journal-schema)). `GET_LOCK` (the upgrade lock) needs no privilege.
 * The grant above covers tables, indexes and foreign keys. When a script needs more, grant it on the same schema:
   `CREATE VIEW` and `SHOW VIEW` for views, `CREATE ROUTINE`, `ALTER ROUTINE` and `EXECUTE` for stored routines,
   `TRIGGER` for triggers, and `EVENT` for events. Avoid granting anything `ON *.*`.
 * `scripts/list-tables.sh`, `scripts/suggest-dto.sh` and the integration tests apply the scripts as a user with exactly
-  this grant (`MIGRATION_PRIVILEGES` in `scripts/lib/disposable-db.sh` and `MigrationPrivileges` in the tests), so a
-  script that needs more fails there first with a "command denied" error. `scripts/cicd/lint.sh` checks that both lists
-  match the grant above.
+  these grants (`MIGRATION_PRIVILEGES` and `JOURNAL_PRIVILEGES` in `scripts/lib/disposable-db.sh`, and
+  `MigrationPrivileges` and `JournalPrivileges` in the tests), so a script that needs more fails there first with a
+  "command denied" error. `scripts/cicd/lint.sh` checks that those lists match the grants above.
 
 **Application user**:
 
 * No DDL, so a compromised application cannot change the schema. Add `EXECUTE` if the application calls stored
   routines.
-* A schema-wide grant also lets the application write to `Patches` and `PatchChecksums`. If a checksum row is deleted,
-  the next upgrade records the script as it is at that point, which weakens the
-  [integrity check](#file-organization-and-maintenance). For a stricter setup, grant the application user privileges
-  per table instead, at the cost of adding a `GRANT` with every new table:
-
-```sql
-GRANT SELECT, INSERT, UPDATE, DELETE ON `example`.`Customers` TO 'example_app'@'%';
-```
+* The schema-wide grant covers tables added by later scripts, with no grant needed per table.
+* Grant it nothing on the journal schema. A deleted `Patches` row would make a script run again, and a deleted
+  `PatchChecksums` row would let the next upgrade trust an edited script.
 
 **All users**:
 
@@ -285,6 +287,30 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON `example`.`Customers` TO 'example_app'@'
   `init-repo.sh` turns a label such as `PROJECT_MALAMUTE` into the schema name `project_malamute`, so this usually
   applies.
 
+### Journal Schema
+
+The `Patches` journal and `PatchChecksums` tables live in their own schema, `<name>_changes` by default, so that the
+application's user can be granted the whole application schema without being able to change them. Set
+`EXAMPLE_SCHEMA_JOURNAL_NAME` to use another name. Setting it to the application schema's own name keeps the journal
+there, as before this was added, at the cost of the protection above.
+
+**Existing databases**: Databases upgraded before this change have the journal tables in the application schema. Once
+an admin has created the journal schema and granted the migration user on it, the next upgrade moves the tables there
+with a single `RENAME TABLE` before doing anything else. A dry run reports the move without making it. The upgrader
+refuses to run, and changes nothing, when:
+
+* the journal schema does not exist, or the migration user has no privileges on it, or
+* both schemas hold journal tables. Work out which journal is right and remove the other one by hand.
+
+Do not create an empty journal in the new schema by hand instead of letting the upgrader move the old one. An empty
+journal means that no script has been applied, and every script would run again.
+
+**Backups**: The journal schema is part of the database's state. Back up and restore the two schemas together, at the
+same point in time. If the application schema is restored from an older backup but the journal is not, the journal
+lists scripts whose changes are no longer there. The upgrader skips them, and the integrity check cannot tell, since
+the scripts themselves are unchanged. A `mariadb-dump` of the application schema alone leaves the journal out, so
+include both, for example with `mariadb-dump --databases example example_changes`.
+
 ### Deployed Database
 
 #### Setup
@@ -293,6 +319,8 @@ Set the following necessary environment variables for the run:
 
 * `EXAMPLE_SCHEMA_HOST`: Address of your SQL server
 * `EXAMPLE_SCHEMA_NAME`: Name of your schema
+* `EXAMPLE_SCHEMA_JOURNAL_NAME`: Optional. Schema for the journal and checksum tables. Defaults to
+  `EXAMPLE_SCHEMA_NAME` with `_changes` added. See [Journal Schema](#journal-schema).
 * `EXAMPLE_SCHEMA_USER`: Username with which to access the target schema. Use a migration user as described in
   [Database Users](#database-users).
 * `EXAMPLE_SCHEMA_PASSWORD`: User password to access the target schema
