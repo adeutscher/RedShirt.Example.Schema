@@ -26,10 +26,8 @@ REVIEW_SCHEMA_PASSWORD="${REVIEW_SCHEMA_PASSWORD:-schema-review-local}"
 REVIEW_MIGRATION_USER="${REVIEW_MIGRATION_USER:-schema_migrator}"
 REVIEW_MIGRATION_PASSWORD="$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')"
 
-# Matches SchemaUpgrader.JournalTableName.
-JOURNAL_TABLE_NAME="${JOURNAL_TABLE_NAME:-Patches}"
-# Matches ScriptChecksums.TableName.
-CHECKSUM_TABLE_NAME="${CHECKSUM_TABLE_NAME:-PatchChecksums}"
+# Holds the journal and checksum tables. Matches SchemaUpgrader.DefaultJournalSchema.
+REVIEW_JOURNAL_SCHEMA="${REVIEW_SCHEMA_NAME}_changes"
 
 # =============================================================================
 # MariaDB-specific: disposable database server (image, bootstrap env, readiness)
@@ -40,6 +38,8 @@ MARIADB_ROOT_PASSWORD="${MARIADB_ROOT_PASSWORD:-${REVIEW_SCHEMA_PASSWORD}}"
 REVIEW_ADMIN_USER="root"
 # Must match the migration user's GRANT in the README (Database Users). scripts/cicd/check-privileges.sh checks this.
 MIGRATION_PRIVILEGES="SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, INDEX, REFERENCES"
+# Must match the migration user's GRANT on the journal schema in the README. Also checked by check-privileges.sh.
+JOURNAL_PRIVILEGES="SELECT, INSERT, CREATE"
 
 # Passwords are handed to docker as bare "-e NAME" options with the value in docker's own environment, so they never
 # appear on a command line (visible to other users through ps and /proc). The mariadb clients read MYSQL_PWD.
@@ -92,7 +92,7 @@ disposable_db_start() {
     sleep 1
   done
 
-  notice "Creating migration user ${REVIEW_MIGRATION_USER} (${MIGRATION_PRIVILEGES})..."
+  notice "Creating journal schema ${REVIEW_JOURNAL_SCHEMA} and migration user ${REVIEW_MIGRATION_USER}..."
   db_create_migration_user
 
   notice "Applying schema updates as ${REVIEW_MIGRATION_USER}..."
@@ -100,6 +100,7 @@ disposable_db_start() {
     --network "${NETWORK_NAME}" \
     -e "EXAMPLE_SCHEMA_HOST=${DB_CONTAINER}" \
     -e "EXAMPLE_SCHEMA_NAME=${REVIEW_SCHEMA_NAME}" \
+    -e "EXAMPLE_SCHEMA_JOURNAL_NAME=${REVIEW_JOURNAL_SCHEMA}" \
     -e "EXAMPLE_SCHEMA_USER=${REVIEW_MIGRATION_USER}" \
     -e EXAMPLE_SCHEMA_PASSWORD \
     "${DOCKER_IMAGE}" >&2
@@ -123,21 +124,36 @@ db_query() {
     -e "${1}"
 }
 
-# Creates the migration user with MIGRATION_PRIVILEGES on the review schema only. The SQL holds the password, so it is
-# sent on stdin rather than as a command line argument.
-db_create_migration_user() {
-  local user password schema
-  user="$(db_quote "${REVIEW_MIGRATION_USER}")"
-  password="$(db_quote "${REVIEW_MIGRATION_PASSWORD}")"
-  schema="${REVIEW_SCHEMA_NAME//\`/\`\`}"
-  # _ and % are wildcards in a GRANT's database name. Escape them so that the grant covers this schema only.
-  schema="${schema//_/\\_}"
-  schema="${schema//%/\\%}"
+# Quotes a schema name for use as an identifier.
+db_quote_identifier() {
+  # shellcheck disable=SC2016 # The backticks are literal SQL quotes.
+  printf '`%s`' "${1//\`/\`\`}"
+}
 
-  printf "CREATE USER '%s'@'%%' IDENTIFIED BY '%s' REQUIRE SSL;\nGRANT %s ON \`%s\`.* TO '%s'@'%%';\n" \
-    "${user}" "${password}" "${MIGRATION_PRIVILEGES}" "${schema}" "${user}" \
-    | MYSQL_PWD="${MARIADB_ROOT_PASSWORD}" docker exec -i -e MYSQL_PWD "${DB_CONTAINER}" mariadb \
-      -u "${REVIEW_ADMIN_USER}"
+# Quotes a schema name for the ON clause of a GRANT. _ and % are wildcards there, so escape them so that the grant
+# covers that schema only.
+db_quote_grant_schema() {
+  local schema="${1//_/\\_}"
+  db_quote_identifier "${schema//%/\\%}"
+}
+
+# Does what an admin does for a deployed database: creates the journal schema, and the migration user with
+# MIGRATION_PRIVILEGES on the review schema and JOURNAL_PRIVILEGES on the journal schema, nothing else. The SQL holds
+# the password, so it is sent on stdin rather than as a command line argument.
+db_create_migration_user() {
+  local user password
+  user="'$(db_quote "${REVIEW_MIGRATION_USER}")'@'%'"
+  password="$(db_quote "${REVIEW_MIGRATION_PASSWORD}")"
+
+  {
+    printf "CREATE DATABASE %s;\n" "$(db_quote_identifier "${REVIEW_JOURNAL_SCHEMA}")"
+    printf "CREATE USER %s IDENTIFIED BY '%s' REQUIRE SSL;\n" "${user}" "${password}"
+    printf "GRANT %s ON %s.* TO %s;\n" \
+      "${MIGRATION_PRIVILEGES}" "$(db_quote_grant_schema "${REVIEW_SCHEMA_NAME}")" "${user}"
+    printf "GRANT %s ON %s.* TO %s;\n" \
+      "${JOURNAL_PRIVILEGES}" "$(db_quote_grant_schema "${REVIEW_JOURNAL_SCHEMA}")" "${user}"
+  } | MYSQL_PWD="${MARIADB_ROOT_PASSWORD}" docker exec -i -e MYSQL_PWD "${DB_CONTAINER}" mariadb \
+    -u "${REVIEW_ADMIN_USER}"
 }
 
 # Escapes a value for use inside a single-quoted SQL string literal.
