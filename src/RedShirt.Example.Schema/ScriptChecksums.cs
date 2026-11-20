@@ -27,15 +27,15 @@ internal static class ScriptChecksums
         return $"`{name.Replace("`", "``")}`";
     }
 
-    private static string QualifiedTableName(string databaseName)
+    private static string QualifiedTableName(string journalSchema)
     {
-        return $"{QuoteIdentifier(databaseName)}.{QuoteIdentifier(TableName)}";
+        return $"{QuoteIdentifier(journalSchema)}.{QuoteIdentifier(TableName)}";
     }
 
-    public static string CreateTableSql(string databaseName)
+    public static string CreateTableSql(string journalSchema)
     {
         return $"""
-                CREATE TABLE IF NOT EXISTS {QualifiedTableName(databaseName)}
+                CREATE TABLE IF NOT EXISTS {QualifiedTableName(journalSchema)}
                 (
                     `ScriptName` VARCHAR(255) NOT NULL,
                     `Sha256` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -45,15 +45,15 @@ internal static class ScriptChecksums
                 """;
     }
 
-    public static string SelectSql(string databaseName)
+    public static string SelectSql(string journalSchema)
     {
-        return $"SELECT `ScriptName`, `Sha256` FROM {QualifiedTableName(databaseName)}";
+        return $"SELECT `ScriptName`, `Sha256` FROM {QualifiedTableName(journalSchema)}";
     }
 
-    public static string InsertSql(string databaseName)
+    public static string InsertSql(string journalSchema)
     {
         return $"""
-                INSERT INTO {QualifiedTableName(databaseName)} (`ScriptName`, `Sha256`, `RecordedAtUtc`)
+                INSERT INTO {QualifiedTableName(journalSchema)} (`ScriptName`, `Sha256`, `RecordedAtUtc`)
                 VALUES (@scriptName, @sha256, UTC_TIMESTAMP(6))
                 """;
     }

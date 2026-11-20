@@ -211,6 +211,51 @@ public class SchemaUpgradeTests
         Assert.NotEqual(ScriptChecksums.Compute("SELECT 1;"), ScriptChecksums.Compute("SELECT 2;"));
     }
 
+    private static async Task<bool> TableExistsAsync(string connectionString, string schema, string table)
+    {
+        return await ScalarAsync(connectionString,
+            $"""
+             SELECT COUNT(*) FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{table}'
+             """) > 0;
+    }
+
+    private static string RootConnectionString(MariaDbContainer mariaDb)
+    {
+        return new MySqlConnectionStringBuilder(mariaDb.GetConnectionString()) {UserID = "root"}.ConnectionString;
+    }
+
+    /// <summary>
+    ///     With a journal schema, the journal and checksum tables are created there and the application schema holds only
+    ///     the application's tables.
+    /// </summary>
+    [Fact(Timeout = 120_000)]
+    public async Task Upgrade_KeepsJournal_InJournalSchema()
+    {
+        const string journalSchema = "tracking";
+
+        await using var mariaDb = BuildContainer();
+        await mariaDb.StartAsync(TestContext.Current.CancellationToken);
+        await ExecuteAsync(RootConnectionString(mariaDb),
+            $"CREATE DATABASE `{journalSchema}`; GRANT ALL ON `{journalSchema}`.* TO '{Username}'@'%';");
+        var connectionString = mariaDb.GetConnectionString();
+
+        Assert.Equal(0, SchemaUpgrader.DryRun(connectionString, DatabaseName, journalSchema));
+        Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName, journalSchema: journalSchema));
+        Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName, journalSchema: journalSchema));
+        Assert.Empty(SchemaUpgrader.GetPendingScripts(connectionString, DatabaseName, journalSchema));
+
+        foreach (var table in new[] {SchemaUpgrader.JournalTableName, ScriptChecksums.TableName})
+        {
+            Assert.True(await TableExistsAsync(connectionString, journalSchema, table), table);
+            Assert.False(await TableExistsAsync(connectionString, DatabaseName, table), table);
+        }
+
+        Assert.True(await TableExistsAsync(connectionString, DatabaseName, "Customers"));
+        Assert.True(await ScalarAsync(connectionString,
+            $"SELECT COUNT(*) FROM `{journalSchema}`.`{ScriptChecksums.TableName}`") >= 1);
+    }
+
     private static async Task<bool> JournalExistsAsync(string connectionString)
     {
         await using var connection = new MySqlConnection(connectionString);

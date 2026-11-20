@@ -4,6 +4,7 @@ using RedShirt.Example.Schema.Exceptions;
 
 const string varHost = "EXAMPLE_SCHEMA_HOST";
 const string varName = "EXAMPLE_SCHEMA_NAME";
+const string varJournalName = "EXAMPLE_SCHEMA_JOURNAL_NAME";
 const string varUser = "EXAMPLE_SCHEMA_USER";
 const string varPassword = "EXAMPLE_SCHEMA_PASSWORD";
 const string varPasswordFile = "EXAMPLE_SCHEMA_PASSWORD_FILE";
@@ -13,6 +14,7 @@ const string varSslCa = "EXAMPLE_SCHEMA_SSL_CA";
 
 var schemaHost = Environment.GetEnvironmentVariable(varHost);
 var schemaName = Environment.GetEnvironmentVariable(varName);
+var schemaJournalName = Environment.GetEnvironmentVariable(varJournalName);
 var schemaUser = Environment.GetEnvironmentVariable(varUser);
 var schemaPassword = Environment.GetEnvironmentVariable(varPassword);
 var schemaPasswordFile = Environment.GetEnvironmentVariable(varPasswordFile);
@@ -78,6 +80,10 @@ var dryRun = args.Contains("--dry-run")
              || dryRunValue == "1"
              || string.Equals(dryRunValue, "true", StringComparison.OrdinalIgnoreCase);
 
+// The journal and checksum tables can live in their own schema, so that the application's user can be granted the
+// whole application schema without being able to change them.
+var journalSchema = string.IsNullOrWhiteSpace(schemaJournalName) ? schemaName : schemaJournalName.Trim();
+
 return dryRun
-    ? SchemaUpgrader.DryRun(connectionString, schemaName)
-    : SchemaUpgrader.Upgrade(connectionString, schemaName);
+    ? SchemaUpgrader.DryRun(connectionString, schemaName, journalSchema)
+    : SchemaUpgrader.Upgrade(connectionString, schemaName, journalSchema: journalSchema);

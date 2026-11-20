@@ -14,17 +14,17 @@ internal static class SchemaUpgrader
     ///     its DML is rolled back. Note that MariaDB/MySQL commit DDL statements implicitly, so a failed script may still
     ///     leave behind DDL that ran before the failing statement.
     /// </summary>
-    /// <param name="databaseName"></param>
-    /// <param name="scriptFilter">Optional filter on embedded script names. Defaults to all embedded scripts.</param>
     /// <param name="connectionString"></param>
-    private static UpgradeEngine BuildEngine(string connectionString, string databaseName,
+    /// <param name="journalSchema">Schema that holds the journal and checksum tables.</param>
+    /// <param name="scriptFilter">Optional filter on embedded script names. Defaults to all embedded scripts.</param>
+    private static UpgradeEngine BuildEngine(string connectionString, string journalSchema,
         Func<string, bool>? scriptFilter = null)
     {
         return DeployChanges.To
             .MySqlDatabase(connectionString)
             // Define a custom journal
             .JournalTo((connectionManager, log) => new ChecksumJournal(
-                new MySqlTableJournal(connectionManager, log, databaseName, JournalTableName), databaseName))
+                new MySqlTableJournal(connectionManager, log, journalSchema, JournalTableName), journalSchema))
             .WithScriptsEmbeddedInAssembly(typeof(SchemaUpgrader).Assembly, scriptFilter ?? (_ => true))
             .WithTransactionPerScript()
             .LogToConsole()
@@ -35,9 +35,10 @@ internal static class SchemaUpgrader
     ///     Lists the embedded scripts that have not yet been journaled, in the order they would run. Does not create the
     ///     journal table or change the database.
     /// </summary>
-    public static IReadOnlyList<string> GetPendingScripts(string connectionString, string databaseName)
+    public static IReadOnlyList<string> GetPendingScripts(string connectionString, string databaseName,
+        string? journalSchema = null)
     {
-        return BuildEngine(connectionString, databaseName)
+        return BuildEngine(connectionString, journalSchema ?? databaseName)
             .GetScriptsToExecute()
             .Select(s => s.Name)
             .ToList();
@@ -56,7 +57,7 @@ internal static class SchemaUpgrader
     ///     database.
     /// </summary>
     internal static IntegrityReport CheckIntegrity(UpgradeEngine engine, string connectionString,
-        string databaseName)
+        string journalSchema)
     {
         var problems = new List<string>();
         var unrecorded = new List<(string, string)>();
@@ -67,7 +68,7 @@ internal static class SchemaUpgrader
             return new IntegrityReport(problems, unrecorded);
         }
 
-        var recorded = ReadChecksums(connectionString, databaseName);
+        var recorded = ReadChecksums(connectionString, journalSchema);
 
         foreach (var script in engine.GetDiscoveredScripts().Where(s => executed.Contains(s.Name)))
         {
@@ -92,7 +93,7 @@ internal static class SchemaUpgrader
         return new IntegrityReport(problems, unrecorded);
     }
 
-    private static Dictionary<string, string> ReadChecksums(string connectionString, string databaseName)
+    private static Dictionary<string, string> ReadChecksums(string connectionString, string journalSchema)
     {
         var checksums = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -105,7 +106,7 @@ internal static class SchemaUpgrader
                    WHERE TABLE_SCHEMA = @database AND TABLE_NAME = @table
                    """, connection))
         {
-            exists.Parameters.AddWithValue("@database", databaseName);
+            exists.Parameters.AddWithValue("@database", journalSchema);
             exists.Parameters.AddWithValue("@table", ScriptChecksums.TableName);
             if (Convert.ToInt32(exists.ExecuteScalar()) == 0)
             {
@@ -113,7 +114,7 @@ internal static class SchemaUpgrader
             }
         }
 
-        using var select = new MySqlCommand(ScriptChecksums.SelectSql(databaseName), connection);
+        using var select = new MySqlCommand(ScriptChecksums.SelectSql(journalSchema), connection);
         using var reader = select.ExecuteReader();
         while (reader.Read())
         {
@@ -123,13 +124,13 @@ internal static class SchemaUpgrader
         return checksums;
     }
 
-    private static void RecordChecksums(string connectionString, string databaseName,
+    private static void RecordChecksums(string connectionString, string journalSchema,
         IReadOnlyList<(string Name, string Sha256)> scripts)
     {
         using var connection = new MySqlConnection(connectionString);
         connection.Open();
 
-        using (var create = new MySqlCommand(ScriptChecksums.CreateTableSql(databaseName), connection))
+        using (var create = new MySqlCommand(ScriptChecksums.CreateTableSql(journalSchema), connection))
         {
             create.ExecuteNonQuery();
         }
@@ -137,7 +138,7 @@ internal static class SchemaUpgrader
         using var transaction = connection.BeginTransaction();
         foreach (var (name, sha256) in scripts)
         {
-            using var insert = new MySqlCommand(ScriptChecksums.InsertSql(databaseName), connection, transaction);
+            using var insert = new MySqlCommand(ScriptChecksums.InsertSql(journalSchema), connection, transaction);
             ScriptChecksums.AddInsertParameters(insert, name, sha256);
             insert.ExecuteNonQuery();
         }
@@ -157,10 +158,14 @@ internal static class SchemaUpgrader
         Console.ResetColor();
     }
 
-    public static int DryRun(string connectionString, string databaseName)
+    /// <param name="connectionString"></param>
+    /// <param name="databaseName">Schema that the update scripts change.</param>
+    /// <param name="journalSchema">Schema that holds the journal and checksum tables. Defaults to databaseName.</param>
+    public static int DryRun(string connectionString, string databaseName, string? journalSchema = null)
     {
-        var engine = BuildEngine(connectionString, databaseName);
-        var integrity = CheckIntegrity(engine, connectionString, databaseName);
+        var journal = journalSchema ?? databaseName;
+        var engine = BuildEngine(connectionString, journal);
+        var integrity = CheckIntegrity(engine, connectionString, journal);
         if (integrity.Problems.Count > 0)
         {
             WriteProblems(integrity.Problems);
@@ -267,9 +272,16 @@ internal static class SchemaUpgrader
         return command.ExecuteScalar() is { } result and not DBNull && Convert.ToInt32(result) == 1;
     }
 
+    /// <param name="connectionString"></param>
+    /// <param name="databaseName">Schema that the update scripts change.</param>
+    /// <param name="scriptFilter">Optional filter on embedded script names. Defaults to all embedded scripts.</param>
+    /// <param name="lockTimeout">How long to wait for another upgrade. Defaults to <see cref="DefaultLockTimeout" />.</param>
+    /// <param name="journalSchema">Schema that holds the journal and checksum tables. Defaults to databaseName.</param>
     public static int Upgrade(string connectionString, string databaseName, Func<string, bool>? scriptFilter = null,
-        TimeSpan? lockTimeout = null)
+        TimeSpan? lockTimeout = null, string? journalSchema = null)
     {
+        var journal = journalSchema ?? databaseName;
+
         // Two upgrades running at once would both see the same pending scripts and both run them. DbUp's MySQL support
         // takes no lock, so hold a named server lock for the whole check and upgrade.
         var timeout = lockTimeout ?? DefaultLockTimeout;
@@ -282,9 +294,9 @@ internal static class SchemaUpgrader
             return -1;
         }
 
-        var upgrader = BuildEngine(connectionString, databaseName, scriptFilter);
+        var upgrader = BuildEngine(connectionString, journal, scriptFilter);
 
-        var integrity = CheckIntegrity(upgrader, connectionString, databaseName);
+        var integrity = CheckIntegrity(upgrader, connectionString, journal);
         if (integrity.Problems.Count > 0)
         {
             WriteProblems(integrity.Problems);
@@ -294,7 +306,7 @@ internal static class SchemaUpgrader
         if (integrity.Unrecorded.Count > 0)
         {
             // Scripts applied before checksums were kept are trusted as they are now.
-            RecordChecksums(connectionString, databaseName, integrity.Unrecorded);
+            RecordChecksums(connectionString, journal, integrity.Unrecorded);
             Console.WriteLine($"Recorded checksums for {integrity.Unrecorded.Count} previously applied script(s).");
         }
 
