@@ -7,10 +7,14 @@ namespace RedShirt.Example.Schema;
 
 internal static class SchemaUpgrader
 {
-    public const string JournalTableName = "Patches";
+    /// <summary>Default name of the DbUp journal table, which lists the applied scripts.</summary>
+    public const string DefaultJournalTable = "Patches";
 
     /// <summary>The journal and checksum tables, which move together between schemas.</summary>
-    private static readonly string[] JournalTables = [JournalTableName, ScriptChecksums.TableName];
+    private static string[] JournalTables(string journalTable)
+    {
+        return [journalTable, ScriptChecksums.TableName];
+    }
 
     /// <summary>
     ///     Default schema for the journal and checksum tables: the application schema's name with <c>_changes</c> added.
@@ -35,15 +39,16 @@ internal static class SchemaUpgrader
     /// </summary>
     /// <param name="connectionString"></param>
     /// <param name="journalSchema">Schema that holds the journal and checksum tables.</param>
+    /// <param name="journalTable">Name of the journal table.</param>
     /// <param name="scriptFilter">Optional filter on embedded script names. Defaults to all embedded scripts.</param>
-    private static UpgradeEngine BuildEngine(string connectionString, string journalSchema,
+    private static UpgradeEngine BuildEngine(string connectionString, string journalSchema, string journalTable,
         Func<string, bool>? scriptFilter = null)
     {
         return DeployChanges.To
             .MySqlDatabase(connectionString)
             // Define a custom journal
             .JournalTo((connectionManager, log) => new ChecksumJournal(
-                new MySqlTableJournal(connectionManager, log, journalSchema, JournalTableName), journalSchema))
+                new MySqlTableJournal(connectionManager, log, journalSchema, journalTable), journalSchema))
             .WithScriptsEmbeddedInAssembly(typeof(SchemaUpgrader).Assembly, scriptFilter ?? (_ => true))
             .WithTransactionPerScript()
             .LogToConsole()
@@ -55,9 +60,10 @@ internal static class SchemaUpgrader
     ///     journal table or change the database.
     /// </summary>
     public static IReadOnlyList<string> GetPendingScripts(string connectionString, string databaseName,
-        string? journalSchema = null)
+        string? journalSchema = null, string? journalTable = null)
     {
-        return BuildEngine(connectionString, journalSchema ?? DefaultJournalSchema(databaseName))
+        return BuildEngine(connectionString, journalSchema ?? DefaultJournalSchema(databaseName),
+                journalTable ?? DefaultJournalTable)
             .GetScriptsToExecute()
             .Select(s => s.Name)
             .ToList();
@@ -134,7 +140,8 @@ internal static class SchemaUpgrader
     ///     Checks that the journal schema exists and finds journal tables left in the application schema. Moving them
     ///     matters: an upgrade that read an empty journal in the new schema would run every script again.
     /// </summary>
-    private static JournalLocation LocateJournal(string connectionString, string databaseName, string journalSchema)
+    private static JournalLocation LocateJournal(string connectionString, string databaseName, string journalSchema,
+        string journalTable)
     {
         if (string.Equals(journalSchema, databaseName, StringComparison.Ordinal))
         {
@@ -158,8 +165,9 @@ internal static class SchemaUpgrader
             }
         }
 
-        var old = JournalTables.Where(t => TableExists(connection, databaseName, t)).ToList();
-        var current = JournalTables.Where(t => TableExists(connection, journalSchema, t)).ToList();
+        var tables = JournalTables(journalTable);
+        var old = tables.Where(t => TableExists(connection, databaseName, t)).ToList();
+        var current = tables.Where(t => TableExists(connection, journalSchema, t)).ToList();
 
         if (old.Count > 0 && current.Count > 0)
         {
@@ -264,11 +272,14 @@ internal static class SchemaUpgrader
     /// <param name="journalSchema">
     ///     Schema that holds the journal and checksum tables. Defaults to <see cref="DefaultJournalSchema" />.
     /// </param>
-    public static int DryRun(string connectionString, string databaseName, string? journalSchema = null)
+    /// <param name="journalTable">Name of the journal table. Defaults to <see cref="DefaultJournalTable" />.</param>
+    public static int DryRun(string connectionString, string databaseName, string? journalSchema = null,
+        string? journalTable = null)
     {
         var journal = journalSchema ?? DefaultJournalSchema(databaseName);
+        var table = journalTable ?? DefaultJournalTable;
 
-        var location = LocateJournal(connectionString, databaseName, journal);
+        var location = LocateJournal(connectionString, databaseName, journal, table);
         if (location.Problem is not null)
         {
             WriteError(location.Problem);
@@ -283,7 +294,7 @@ internal static class SchemaUpgrader
             journal = databaseName;
         }
 
-        var engine = BuildEngine(connectionString, journal);
+        var engine = BuildEngine(connectionString, journal, table);
         var integrity = CheckIntegrity(engine, connectionString, journal);
         if (integrity.Problems.Count > 0)
         {
@@ -398,10 +409,12 @@ internal static class SchemaUpgrader
     /// <param name="journalSchema">
     ///     Schema that holds the journal and checksum tables. Defaults to <see cref="DefaultJournalSchema" />.
     /// </param>
+    /// <param name="journalTable">Name of the journal table. Defaults to <see cref="DefaultJournalTable" />.</param>
     public static int Upgrade(string connectionString, string databaseName, Func<string, bool>? scriptFilter = null,
-        TimeSpan? lockTimeout = null, string? journalSchema = null)
+        TimeSpan? lockTimeout = null, string? journalSchema = null, string? journalTable = null)
     {
         var journal = journalSchema ?? DefaultJournalSchema(databaseName);
+        var table = journalTable ?? DefaultJournalTable;
 
         // Two upgrades running at once would both see the same pending scripts and both run them. DbUp's MySQL support
         // takes no lock, so hold a named server lock for the whole check and upgrade.
@@ -416,7 +429,7 @@ internal static class SchemaUpgrader
         }
 
         // Under the lock, so that two upgrades do not both try to move the journal.
-        var location = LocateJournal(connectionString, databaseName, journal);
+        var location = LocateJournal(connectionString, databaseName, journal, table);
         if (location.Problem is not null)
         {
             WriteError(location.Problem);
@@ -428,7 +441,7 @@ internal static class SchemaUpgrader
             MoveJournal(connectionString, databaseName, journal, location.TablesToMove);
         }
 
-        var upgrader = BuildEngine(connectionString, journal, scriptFilter);
+        var upgrader = BuildEngine(connectionString, journal, table, scriptFilter);
 
         var integrity = CheckIntegrity(upgrader, connectionString, journal);
         if (integrity.Problems.Count > 0)

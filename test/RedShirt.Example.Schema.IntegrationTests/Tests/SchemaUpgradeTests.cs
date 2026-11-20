@@ -59,14 +59,14 @@ public class SchemaUpgradeTests
                          connection))
         {
             command.Parameters.AddWithValue("@database", JournalSchema);
-            command.Parameters.AddWithValue("@journal", SchemaUpgrader.JournalTableName);
+            command.Parameters.AddWithValue("@journal", SchemaUpgrader.DefaultJournalTable);
             var journalTableCount =
                 Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
             Assert.Equal(1, journalTableCount);
         }
 
         await using (var command = new MySqlCommand(
-                         $"SELECT COUNT(*) FROM {Journal(SchemaUpgrader.JournalTableName)}",
+                         $"SELECT COUNT(*) FROM {Journal(SchemaUpgrader.DefaultJournalTable)}",
                          connection))
         {
             var journalRowCount =
@@ -77,7 +77,7 @@ public class SchemaUpgradeTests
         // Every journaled script has a checksum.
         await using (var command = new MySqlCommand(
                          $"""
-                          SELECT COUNT(*) FROM {Journal(SchemaUpgrader.JournalTableName)} p
+                          SELECT COUNT(*) FROM {Journal(SchemaUpgrader.DefaultJournalTable)} p
                           LEFT JOIN {Journal(ScriptChecksums.TableName)} c ON c.ScriptName = p.ScriptName
                           WHERE c.ScriptName IS NULL
                           """,
@@ -132,7 +132,7 @@ public class SchemaUpgradeTests
 
         // Stands in for an applied script that was renamed or deleted.
         await ExecuteAsync(connectionString,
-            $"INSERT INTO {Journal(SchemaUpgrader.JournalTableName)} (`ScriptName`, `Applied`) VALUES ('Removed.sql', NOW())");
+            $"INSERT INTO {Journal(SchemaUpgrader.DefaultJournalTable)} (`ScriptName`, `Applied`) VALUES ('Removed.sql', NOW())");
 
         Assert.Equal(-1, SchemaUpgrader.DryRun(connectionString, DatabaseName));
         Assert.Equal(-1, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
@@ -203,8 +203,8 @@ public class SchemaUpgradeTests
         Assert.All(results, result => Assert.Equal(0, result));
         Assert.Equal(
             await ScalarAsync(connectionString,
-                $"SELECT COUNT(DISTINCT `ScriptName`) FROM {Journal(SchemaUpgrader.JournalTableName)}"),
-            await ScalarAsync(connectionString, $"SELECT COUNT(*) FROM {Journal(SchemaUpgrader.JournalTableName)}"));
+                $"SELECT COUNT(DISTINCT `ScriptName`) FROM {Journal(SchemaUpgrader.DefaultJournalTable)}"),
+            await ScalarAsync(connectionString, $"SELECT COUNT(*) FROM {Journal(SchemaUpgrader.DefaultJournalTable)}"));
         await AssertSchemaAsync(connectionString);
     }
 
@@ -238,16 +238,16 @@ public class SchemaUpgradeTests
         // The old layout.
         Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName, journalSchema: DatabaseName));
         var applied = await ScalarAsync(connectionString,
-            $"SELECT COUNT(*) FROM `{DatabaseName}`.`{SchemaUpgrader.JournalTableName}`");
+            $"SELECT COUNT(*) FROM `{DatabaseName}`.`{SchemaUpgrader.DefaultJournalTable}`");
 
         // A dry run reports from the journal where it is, and moves nothing.
         Assert.Equal(0, SchemaUpgrader.DryRun(connectionString, DatabaseName));
-        Assert.True(await TableExistsAsync(connectionString, DatabaseName, SchemaUpgrader.JournalTableName));
-        Assert.False(await TableExistsAsync(connectionString, JournalSchema, SchemaUpgrader.JournalTableName));
+        Assert.True(await TableExistsAsync(connectionString, DatabaseName, SchemaUpgrader.DefaultJournalTable));
+        Assert.False(await TableExistsAsync(connectionString, JournalSchema, SchemaUpgrader.DefaultJournalTable));
 
         Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
 
-        foreach (var table in new[] {SchemaUpgrader.JournalTableName, ScriptChecksums.TableName})
+        foreach (var table in new[] {SchemaUpgrader.DefaultJournalTable, ScriptChecksums.TableName})
         {
             Assert.False(await TableExistsAsync(connectionString, DatabaseName, table), table);
             Assert.True(await TableExistsAsync(connectionString, JournalSchema, table), table);
@@ -255,7 +255,7 @@ public class SchemaUpgradeTests
 
         // Nothing ran again.
         Assert.Equal(applied,
-            await ScalarAsync(connectionString, $"SELECT COUNT(*) FROM {Journal(SchemaUpgrader.JournalTableName)}"));
+            await ScalarAsync(connectionString, $"SELECT COUNT(*) FROM {Journal(SchemaUpgrader.DefaultJournalTable)}"));
         Assert.Empty(SchemaUpgrader.GetPendingScripts(connectionString, DatabaseName));
         await AssertSchemaAsync(connectionString);
     }
@@ -269,7 +269,7 @@ public class SchemaUpgradeTests
 
         Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
         await ExecuteAsync(connectionString,
-            $"CREATE TABLE `{DatabaseName}`.`{SchemaUpgrader.JournalTableName}` LIKE {Journal(SchemaUpgrader.JournalTableName)}");
+            $"CREATE TABLE `{DatabaseName}`.`{SchemaUpgrader.DefaultJournalTable}` LIKE {Journal(SchemaUpgrader.DefaultJournalTable)}");
 
         Assert.Equal(-1, SchemaUpgrader.DryRun(connectionString, DatabaseName));
         Assert.Equal(-1, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
@@ -285,6 +285,41 @@ public class SchemaUpgradeTests
         Assert.Equal(-1, SchemaUpgrader.DryRun(connectionString, DatabaseName, "missing"));
         Assert.Equal(-1, SchemaUpgrader.Upgrade(connectionString, DatabaseName, journalSchema: "missing"));
         Assert.False(await TableExistsAsync(connectionString, DatabaseName, "Customers"));
+    }
+
+    /// <summary>
+    ///     A journal table with another name is used throughout, including by the move from the application schema. The
+    ///     checksum table keeps its own name.
+    /// </summary>
+    [Fact(Timeout = 120_000)]
+    public async Task Upgrade_UsesJournalTableName_AndMovesIt()
+    {
+        const string journalTable = "SchemaVersions";
+
+        await using var mariaDb = BuildContainer();
+        await mariaDb.StartAsync(TestContext.Current.CancellationToken);
+        var connectionString = mariaDb.GetConnectionString();
+
+        // The old layout, under the custom name.
+        Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName, journalSchema: DatabaseName,
+            journalTable: journalTable));
+        Assert.True(await TableExistsAsync(connectionString, DatabaseName, journalTable));
+        Assert.False(await TableExistsAsync(connectionString, DatabaseName, SchemaUpgrader.DefaultJournalTable));
+        var applied = await ScalarAsync(connectionString, $"SELECT COUNT(*) FROM `{DatabaseName}`.`{journalTable}`");
+
+        Assert.Equal(0, SchemaUpgrader.DryRun(connectionString, DatabaseName, journalTable: journalTable));
+        Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName, journalTable: journalTable));
+
+        foreach (var table in new[] {journalTable, ScriptChecksums.TableName})
+        {
+            Assert.False(await TableExistsAsync(connectionString, DatabaseName, table), table);
+            Assert.True(await TableExistsAsync(connectionString, JournalSchema, table), table);
+        }
+
+        Assert.False(await TableExistsAsync(connectionString, JournalSchema, SchemaUpgrader.DefaultJournalTable));
+        Assert.Equal(applied, await ScalarAsync(connectionString, $"SELECT COUNT(*) FROM {Journal(journalTable)}"));
+        Assert.Empty(SchemaUpgrader.GetPendingScripts(connectionString, DatabaseName, journalTable: journalTable));
+        Assert.True(await TableExistsAsync(connectionString, DatabaseName, "Customers"));
     }
 
     [Fact]
@@ -329,7 +364,7 @@ public class SchemaUpgradeTests
         Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName, journalSchema: journalSchema));
         Assert.Empty(SchemaUpgrader.GetPendingScripts(connectionString, DatabaseName, journalSchema));
 
-        foreach (var table in new[] {SchemaUpgrader.JournalTableName, ScriptChecksums.TableName})
+        foreach (var table in new[] {SchemaUpgrader.DefaultJournalTable, ScriptChecksums.TableName})
         {
             Assert.True(await TableExistsAsync(connectionString, journalSchema, table), table);
             Assert.False(await TableExistsAsync(connectionString, DatabaseName, table), table);
@@ -354,7 +389,7 @@ public class SchemaUpgradeTests
             """,
             connection);
         command.Parameters.AddWithValue("@database", JournalSchema);
-        command.Parameters.AddWithValue("@journal", SchemaUpgrader.JournalTableName);
+        command.Parameters.AddWithValue("@journal", SchemaUpgrader.DefaultJournalTable);
         return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken)) > 0;
     }
 
@@ -439,7 +474,7 @@ public class SchemaUpgradeTests
         Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName, journalSchema: DatabaseName));
         Assert.Equal(0, SchemaUpgrader.DryRun(connectionString, DatabaseName));
         Assert.Equal(0, SchemaUpgrader.Upgrade(connectionString, DatabaseName));
-        Assert.False(await TableExistsAsync(connectionString, DatabaseName, SchemaUpgrader.JournalTableName));
+        Assert.False(await TableExistsAsync(connectionString, DatabaseName, SchemaUpgrader.DefaultJournalTable));
         await AssertSchemaAsync(connectionString);
 
         // Drop the checksums so that the second upgrade also backfills them. The migration user cannot delete from the
