@@ -354,6 +354,9 @@ your shell afterwards:
 (set -a && . ~/.config/example-schema/production.env && set +a && ./update.sh)
 ```
 
+> **Warning**: If you source a configuration file like this, make sure that the file has the appropriate permissions
+> so that it is not casually readable by another user.
+
 #### Docker
 
 Copy `.env.example` to `.env`, set the `EXAMPLE_SCHEMA_*` variables, and run:
