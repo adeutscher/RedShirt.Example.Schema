@@ -130,6 +130,9 @@ db_create_migration_user() {
   user="$(db_quote "${REVIEW_MIGRATION_USER}")"
   password="$(db_quote "${REVIEW_MIGRATION_PASSWORD}")"
   schema="${REVIEW_SCHEMA_NAME//\`/\`\`}"
+  # _ and % are wildcards in a GRANT's database name. Escape them so that the grant covers this schema only.
+  schema="${schema//_/\\_}"
+  schema="${schema//%/\\%}"
 
   printf "CREATE USER '%s'@'%%' IDENTIFIED BY '%s' REQUIRE SSL;\nGRANT %s ON \`%s\`.* TO '%s'@'%%';\n" \
     "${user}" "${password}" "${MIGRATION_PRIVILEGES}" "${schema}" "${user}" \

@@ -280,6 +280,10 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON `example`.`Customers` TO 'example_app'@'
 
 * `REQUIRE SSL` makes the server refuse unencrypted connections for that account, whatever the client's TLS mode.
 * Replace `'%'` with the host or network that connects, for example `'example_migrator'@'10.0.1.%'`, where you can.
+* In the database name of a `GRANT ... ON`, `_` and `%` are wildcards. A grant on `` `my_db`.* `` also covers `myXdb`,
+  `my1db` and so on. Escape them with a backslash, `` `my\_db`.* ``, so that the grant covers that schema only.
+  `init-repo.sh` turns a label such as `PROJECT_MALAMUTE` into the schema name `project_malamute`, so this usually
+  applies.
 
 ### Deployed Database
 

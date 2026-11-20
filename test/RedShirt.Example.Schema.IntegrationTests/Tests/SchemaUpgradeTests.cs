@@ -75,6 +75,14 @@ public class SchemaUpgradeTests
         }
     }
 
+    /// <summary>
+    ///     Escapes <c>_</c> and <c>%</c>, which are wildcards in the database name of a GRANT, as the README describes.
+    /// </summary>
+    private static string EscapeGrantWildcards(string databaseName)
+    {
+        return databaseName.Replace("_", @"\_").Replace("%", @"\%");
+    }
+
     private static async Task ExecuteAsync(string connectionString, string sql)
     {
         await using var connection = new MySqlConnection(connectionString);
@@ -279,7 +287,7 @@ public class SchemaUpgradeTests
         await ExecuteAsync(rootConnectionString,
             $"""
              CREATE USER '{migrationUser}'@'%' IDENTIFIED BY '{migrationPassword}' REQUIRE SSL;
-             GRANT {MigrationPrivileges} ON `{DatabaseName}`.* TO '{migrationUser}'@'%';
+             GRANT {MigrationPrivileges} ON `{EscapeGrantWildcards(DatabaseName)}`.* TO '{migrationUser}'@'%';
              """);
 
         var connectionString = new MySqlConnectionStringBuilder(mariaDb.GetConnectionString())
@@ -301,6 +309,18 @@ public class SchemaUpgradeTests
         var denied = await Assert.ThrowsAsync<MySqlException>(() =>
             ExecuteAsync(connectionString, "CREATE DATABASE `other`"));
         Assert.Equal(MySqlErrorCode.DatabaseAccessDenied, denied.ErrorCode);
+
+        // With _ escaped, a grant on one schema does not also match a schema whose name differs at the _.
+        await ExecuteAsync(rootConnectionString,
+            $"""
+             CREATE DATABASE `other_db`;
+             CREATE DATABASE `otherXdb`;
+             GRANT CREATE ON `{EscapeGrantWildcards("other_db")}`.* TO '{migrationUser}'@'%';
+             """);
+        await ExecuteAsync(connectionString, "CREATE TABLE `other_db`.`Allowed` (`Id` INT)");
+        var lookalike = await Assert.ThrowsAsync<MySqlException>(() =>
+            ExecuteAsync(connectionString, "CREATE TABLE `otherXdb`.`Denied` (`Id` INT)"));
+        Assert.Equal(MySqlErrorCode.TableAccessDenied, lookalike.ErrorCode);
     }
 
     /// <summary>
