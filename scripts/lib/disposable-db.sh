@@ -31,7 +31,7 @@ REVIEW_JOURNAL_SCHEMA="${REVIEW_SCHEMA_NAME}_changes"
 # =============================================================================
 # MariaDB-specific: disposable database server (image, bootstrap env, readiness)
 # =============================================================================
-MARIADB_IMAGE="${MARIADB_IMAGE:-mariadb:12.3.2}"
+MARIADB_IMAGE="${MARIADB_IMAGE:-mariadb:12.3.3}"
 # Random per run, and never taken from the caller's environment, so that a password that is set there for another
 # server does not end up in this container's configuration, which docker inspect shows.
 MARIADB_ROOT_PASSWORD="$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')"

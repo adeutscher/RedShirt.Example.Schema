@@ -156,7 +156,7 @@ public class SchemaUpgradeTests
                      GRANT ALL ON `{EscapeGrantWildcards(JournalSchema)}`.* TO '{Username}'@'%';
                      """;
 
-        return new MariaDbBuilder("mariadb:12.3.2")
+        return new MariaDbBuilder("mariadb:12.3.3")
             .WithDatabase(DatabaseName)
             .WithUsername(Username)
             .WithPassword(Password)
