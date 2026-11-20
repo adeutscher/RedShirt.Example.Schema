@@ -19,7 +19,6 @@ TESTS_ENABLE="${TESTS_ENABLE:-0}"
 
 # Defaults align with EXAMPLE_SCHEMA_* / local-update.sh. Override when reviewing another target name.
 REVIEW_SCHEMA_NAME="${EXAMPLE_SCHEMA_NAME:-schema-review}"
-REVIEW_SCHEMA_PASSWORD="${REVIEW_SCHEMA_PASSWORD:-schema-review-local}"
 
 # The upgrader runs as a migration user with only the privileges that the README's Database Users section grants, so
 # that a script needing more fails here before it fails against a deployed database. The password is random per run.
@@ -33,7 +32,9 @@ REVIEW_JOURNAL_SCHEMA="${REVIEW_SCHEMA_NAME}_changes"
 # MariaDB-specific: disposable database server (image, bootstrap env, readiness)
 # =============================================================================
 MARIADB_IMAGE="${MARIADB_IMAGE:-mariadb:12.3.2}"
-MARIADB_ROOT_PASSWORD="${MARIADB_ROOT_PASSWORD:-${REVIEW_SCHEMA_PASSWORD}}"
+# Random per run, and never taken from the caller's environment, so that a password that is set there for another
+# server does not end up in this container's configuration, which docker inspect shows.
+MARIADB_ROOT_PASSWORD="$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')"
 # The bootstrap account, used to create the migration user and for the read-only review queries.
 REVIEW_ADMIN_USER="root"
 # Must match the migration user's GRANT in the README (Database Users). scripts/cicd/check-privileges.sh checks this.
